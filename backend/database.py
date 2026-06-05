@@ -5,9 +5,27 @@ Banco de dados SQLite — modelos e operações.
 
 import sqlite3
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from backend.config import config
+
+
+def extrair_produto_id(link: str) -> str | None:
+    """Extrai um ID canônico do produto a partir do link (para dedup robusto).
+
+    Mercado Livre: MLB-123456789 ou MLB123456789  -> 'MLB123456789'
+    Shopee:        ...-i.SHOPID.ITEMID             -> 'shopee.SHOPID.ITEMID'
+    """
+    if not link:
+        return None
+    m = re.search(r"MLB-?(\d+)", link, re.IGNORECASE)
+    if m:
+        return f"MLB{m.group(1)}"
+    m = re.search(r"i\.(\d+)\.(\d+)", link)
+    if m:
+        return f"shopee.{m.group(1)}.{m.group(2)}"
+    return None
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -115,6 +133,12 @@ def init_db():
     except sqlite3.OperationalError:
         conn.execute("ALTER TABLE ofertas ADD COLUMN departamento_id INTEGER")
 
+    # Migração: adicionar coluna produto_id (ID canônico para dedup robusto)
+    try:
+        conn.execute("SELECT produto_id FROM ofertas LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE ofertas ADD COLUMN produto_id TEXT")
+
     # Inserir departamentos padrão se a tabela estiver vazia
     count = conn.execute("SELECT COUNT(*) FROM departamentos").fetchone()[0]
     if count == 0:
@@ -152,8 +176,8 @@ def criar_oferta(dados: dict) -> int:
         INSERT INTO ofertas (titulo, preco, preco_original, desconto_pct, loja,
                              link_original, link_afiliado, imagem_url, categoria,
                              vendedor, reputacao, frete_gratis, status, fonte, dados_extra,
-                             departamento_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             departamento_id, produto_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         dados.get("titulo", ""),
         dados.get("preco", 0),
@@ -171,6 +195,7 @@ def criar_oferta(dados: dict) -> int:
         dados.get("fonte", "manual"),
         json.dumps(dados.get("dados_extra")) if dados.get("dados_extra") else None,
         dados.get("departamento_id"),
+        extrair_produto_id(dados.get("link_original")),
     ))
     conn.commit()
     oferta_id = cur.lastrowid
@@ -264,11 +289,21 @@ def deletar_oferta(oferta_id: int) -> bool:
 
 
 def oferta_existe(link_original: str) -> bool:
-    """Verifica se já existe oferta com este link original (evita duplicatas)."""
+    """Verifica se já existe oferta com este produto (evita duplicatas).
+
+    Usa o ID canônico do produto quando extraível (robusto a variações de URL);
+    cai para comparação de link exato quando não há ID.
+    """
     conn = _get_conn()
-    row = conn.execute(
-        "SELECT id FROM ofertas WHERE link_original = ?", (link_original,)
-    ).fetchone()
+    produto_id = extrair_produto_id(link_original)
+    if produto_id:
+        row = conn.execute(
+            "SELECT id FROM ofertas WHERE produto_id = ?", (produto_id,)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT id FROM ofertas WHERE link_original = ?", (link_original,)
+        ).fetchone()
     conn.close()
     return row is not None
 

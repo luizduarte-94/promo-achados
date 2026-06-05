@@ -57,6 +57,12 @@ class Config:
     BUSCA_PRECO_MAXIMO: float = float(os.getenv("BUSCA_PRECO_MAXIMO", "500"))
     PAUSA_ENTRE_POSTS: int = int(os.getenv("PAUSA_ENTRE_POSTS", "3"))
 
+    # --- Auto-Post (postagem automatica pelo agendador) ---
+    # Desligado por padrao: so posta sozinho quando explicitamente ativado.
+    AUTO_POST_ENABLED: bool = os.getenv("AUTO_POST_ENABLED", "False").lower() == "true"
+    AUTO_POST_SCORE_MINIMO: int = int(os.getenv("AUTO_POST_SCORE_MINIMO", "60"))
+    AUTO_POST_MAX_POR_CICLO: int = int(os.getenv("AUTO_POST_MAX_POR_CICLO", "3"))
+
     @classmethod
     def telegram_ok(cls) -> bool:
         return bool(cls.TELEGRAM_BOT_TOKEN and "COLE" not in cls.TELEGRAM_BOT_TOKEN)

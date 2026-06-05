@@ -3,9 +3,13 @@
 Agendador de tarefas — busca automática de ofertas em intervalos configuráveis.
 """
 
+import time
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from backend.scrapers.mercadolivre import MercadoLivreScraper
 from backend.scrapers.shopee import ShopeeScraper
+from backend.channels.telegram import TelegramChannel
+from backend.scoring import score_oferta
 from backend import database as db
 from backend.config import config
 
@@ -13,6 +17,43 @@ from backend.config import config
 scheduler = BackgroundScheduler()
 ml_scraper = MercadoLivreScraper()
 shopee_scraper = ShopeeScraper()
+telegram = TelegramChannel()
+
+
+def auto_postar():
+    """Posta automaticamente as melhores ofertas pendentes no Telegram.
+
+    Só roda se AUTO_POST_ENABLED=true. Posta apenas ofertas que:
+      - estão pendentes,
+      - já têm link de afiliado (nunca posta sem link que paga),
+      - têm score >= AUTO_POST_SCORE_MINIMO.
+    Limita a AUTO_POST_MAX_POR_CICLO por execução.
+    """
+    if not config.AUTO_POST_ENABLED:
+        return
+    if not telegram.esta_configurado():
+        print("[AUTO-POST] Telegram não configurado. Pulando.")
+        return
+
+    pendentes = db.listar_ofertas(status="pendente", limite=200)
+    candidatas = [
+        o for o in pendentes
+        if (o.get("link_afiliado") or "").strip()
+        and score_oferta(o) >= config.AUTO_POST_SCORE_MINIMO
+    ]
+    candidatas.sort(key=score_oferta, reverse=True)
+    candidatas = candidatas[: config.AUTO_POST_MAX_POR_CICLO]
+
+    if not candidatas:
+        print("[AUTO-POST] Nenhuma oferta elegível (sem link afiliado ou score baixo).")
+        return
+
+    print(f"[AUTO-POST] Postando {len(candidatas)} oferta(s) no Telegram...")
+    for oferta in candidatas:
+        resultado = telegram.enviar(oferta)
+        db.registrar_postagem(oferta["id"], "telegram", resultado["sucesso"], resultado["resposta"])
+        print(f"[AUTO-POST] #{oferta['id']} score={score_oferta(oferta)} -> {resultado['sucesso']}")
+        time.sleep(config.PAUSA_ENTRE_POSTS)
 
 
 def tarefa_busca_automatica():
@@ -66,6 +107,13 @@ def tarefa_busca_automatica():
             print(f"[SHOPEE] Erro na busca automática: {e}")
 
     print(f"[AGENDADOR] Busca concluída. {total_novas} novas ofertas adicionadas.")
+
+    # Auto-post (no-op se AUTO_POST_ENABLED=false)
+    try:
+        auto_postar()
+    except Exception as e:
+        print(f"[AUTO-POST] Erro: {e}")
+
     print("=" * 50 + "\n")
 
 
