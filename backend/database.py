@@ -143,12 +143,17 @@ def init_db():
 
 def criar_oferta(dados: dict) -> int:
     """Insere uma oferta e retorna o ID."""
+    # Classificação automática de departamento se não informado
+    if not dados.get("departamento_id") and dados.get("titulo"):
+        dados = {**dados, "departamento_id": classificar_departamento(dados["titulo"])}
+
     conn = _get_conn()
     cur = conn.execute("""
         INSERT INTO ofertas (titulo, preco, preco_original, desconto_pct, loja,
                              link_original, link_afiliado, imagem_url, categoria,
-                             vendedor, reputacao, frete_gratis, status, fonte, dados_extra)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             vendedor, reputacao, frete_gratis, status, fonte, dados_extra,
+                             departamento_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         dados.get("titulo", ""),
         dados.get("preco", 0),
@@ -165,6 +170,7 @@ def criar_oferta(dados: dict) -> int:
         dados.get("status", "pendente"),
         dados.get("fonte", "manual"),
         json.dumps(dados.get("dados_extra")) if dados.get("dados_extra") else None,
+        dados.get("departamento_id"),
     ))
     conn.commit()
     oferta_id = cur.lastrowid
@@ -187,17 +193,22 @@ def _parse_row(row: sqlite3.Row) -> dict:
 def listar_ofertas(status: str = None, loja: str = None, limite: int = 100) -> list[dict]:
     """Lista ofertas com filtros opcionais."""
     conn = _get_conn()
-    query = "SELECT * FROM ofertas WHERE 1=1"
+    query = """
+        SELECT o.*, d.nome AS departamento_nome, d.emoji AS departamento_emoji
+        FROM ofertas o
+        LEFT JOIN departamentos d ON o.departamento_id = d.id
+        WHERE 1=1
+    """
     params = []
 
     if status:
-        query += " AND status = ?"
+        query += " AND o.status = ?"
         params.append(status)
     if loja:
-        query += " AND loja = ?"
+        query += " AND o.loja = ?"
         params.append(loja)
 
-    query += " ORDER BY criado_em DESC LIMIT ?"
+    query += " ORDER BY o.criado_em DESC LIMIT ?"
     params.append(limite)
 
     rows = conn.execute(query, params).fetchall()
@@ -208,7 +219,12 @@ def listar_ofertas(status: str = None, loja: str = None, limite: int = 100) -> l
 def obter_oferta(oferta_id: int) -> dict | None:
     """Retorna uma oferta pelo ID."""
     conn = _get_conn()
-    row = conn.execute("SELECT * FROM ofertas WHERE id = ?", (oferta_id,)).fetchone()
+    row = conn.execute("""
+        SELECT o.*, d.nome AS departamento_nome, d.emoji AS departamento_emoji
+        FROM ofertas o
+        LEFT JOIN departamentos d ON o.departamento_id = d.id
+        WHERE o.id = ?
+    """, (oferta_id,)).fetchone()
     conn.close()
     return _parse_row(row) if row else None
 
@@ -220,7 +236,7 @@ def atualizar_oferta(oferta_id: int, dados: dict) -> bool:
     valores = []
     for chave in ("titulo", "preco", "preco_original", "desconto_pct", "loja",
                    "link_original", "link_afiliado", "imagem_url", "categoria",
-                   "vendedor", "reputacao", "frete_gratis", "status"):
+                   "vendedor", "reputacao", "frete_gratis", "status", "departamento_id"):
         if chave in dados:
             campos.append(f"{chave} = ?")
             valores.append(dados[chave])

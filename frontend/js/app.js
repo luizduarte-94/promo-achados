@@ -7,6 +7,8 @@ const API = '';
 
 const App = {
     filtroAtual: 'todas',
+    filtroDep: 'todos',
+    departamentos: [],
     ofertas: [],
     currentTab: 'dashboard',
 
@@ -29,6 +31,7 @@ const App = {
 
         await Promise.all([
             this.carregarStats(),
+            this.carregarDepartamentos(),
             this.carregarOfertas(),
             this.carregarConfig(),
             this.carregarHistorico(),
@@ -154,7 +157,40 @@ const App = {
     filtrar(filtro) {
         this.filtroAtual = filtro;
         document.querySelectorAll('#filterBar .chip').forEach(c => c.classList.remove('active'));
-        document.querySelector(`[data-filter="${filtro}"]`)?.classList.add('active');
+        document.querySelector(`#filterBar [data-filter="${filtro}"]`)?.classList.add('active');
+        this.renderizarOfertas();
+    },
+
+    // =============================================
+    // DEPARTAMENTOS
+    // =============================================
+
+    async carregarDepartamentos() {
+        try {
+            const resp = await fetch(`${API}/api/departamentos`);
+            this.departamentos = await resp.json();
+            this.renderDeptChips();
+        } catch (e) {
+            console.error('Erro ao carregar departamentos:', e);
+        }
+    },
+
+    renderDeptChips() {
+        const bar = document.getElementById('deptFilterBar');
+        if (!bar) return;
+        const chip = (dep, label, active) =>
+            `<button class="chip ${active ? 'active' : ''}" data-dep="${dep}" onclick="App.filtrarDep('${dep}')">${label}</button>`;
+        const chips = [chip('todos', 'Todos Deptos', this.filtroDep === 'todos')];
+        for (const d of this.departamentos) {
+            chips.push(chip(d.id, `${d.emoji} ${this._esc(d.nome)}`, String(this.filtroDep) === String(d.id)));
+        }
+        bar.innerHTML = chips.join('');
+    },
+
+    filtrarDep(dep) {
+        this.filtroDep = dep;
+        document.querySelectorAll('#deptFilterBar .chip').forEach(c => c.classList.remove('active'));
+        document.querySelector(`#deptFilterBar [data-dep="${dep}"]`)?.classList.add('active');
         this.renderizarOfertas();
     },
 
@@ -167,6 +203,10 @@ const App = {
         else if (this.filtroAtual === 'cupom') lista = lista.filter(o => o.dados_extra && o.dados_extra.cupom);
         else if (this.filtroAtual === 'ml') lista = lista.filter(o => o.loja === 'Mercado Livre');
         else if (this.filtroAtual === 'shopee') lista = lista.filter(o => o.loja === 'Shopee');
+
+        if (this.filtroDep !== 'todos') {
+            lista = lista.filter(o => String(o.departamento_id) === String(this.filtroDep));
+        }
 
         if (lista.length === 0) {
             grid.innerHTML = `
@@ -233,6 +273,7 @@ const App = {
                         ${cupomInfo}
                         <div class="offer-meta">
                             <span class="offer-status ${statusCls}">${statusTxt}</span>
+                            ${o.departamento_nome ? `<span class="offer-dept">${o.departamento_emoji || '📦'} ${this._esc(o.departamento_nome)}</span>` : ''}
                             ${o.vendedor ? `<span class="offer-seller">🏪 ${this._esc(o.vendedor)}</span>` : ''}
                         </div>
                     </div>

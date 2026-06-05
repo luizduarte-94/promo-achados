@@ -736,6 +736,17 @@ body {
     color: var(--text-tertiary);
 }
 
+.offer-dept {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: var(--radius-full);
+    background: var(--brand-gradient-subtle);
+    border: 1px solid var(--brand-primary);
+    color: var(--brand-primary);
+    white-space: nowrap;
+}
+
 .offer-footer {
     padding: 10px 18px 14px;
     display: flex;
