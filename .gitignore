@@ -6,5 +6,6 @@ __pycache__/
 *.bak
 .vscode/
 .idea/
+.claude/
 *.zip
 _recover_inspect/

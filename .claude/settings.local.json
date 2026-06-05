@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(git add *)",
-      "Bash(git commit -q -m 'FASE 3: UI de produtos recorrentes + historico de precos *)"
-    ]
-  }
-}
