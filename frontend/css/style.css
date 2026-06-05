@@ -787,6 +787,61 @@ body {
 }
 
 /* =============================================
+   DATA TABLE (recorrentes)
+   ============================================= */
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.data-table th {
+    text-align: left;
+    padding: 8px 10px;
+    color: var(--text-tertiary);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border-default);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.data-table td {
+    padding: 10px;
+    border-bottom: 1px solid var(--border-default);
+    color: var(--text-secondary);
+    vertical-align: middle;
+}
+
+.data-table tr:hover td { background: var(--bg-card, rgba(255,255,255,0.02)); }
+
+/* =============================================
+   MINI CHART (histórico de preços)
+   ============================================= */
+
+.hp-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 140px;
+    padding: 8px;
+    background: var(--bg-body, rgba(0,0,0,0.2));
+    border-radius: 8px;
+    border: 1px solid var(--border-default);
+}
+
+.hp-bar {
+    flex: 1 1 auto;
+    min-width: 3px;
+    border-radius: 2px 2px 0 0;
+    transition: opacity 0.15s ease;
+    cursor: default;
+}
+
+.hp-bar:hover { opacity: 0.7; }
+
+/* =============================================
    HISTORY LIST
    ============================================= */
 

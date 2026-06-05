@@ -54,12 +54,13 @@ const App = {
             ofertas: 'Ofertas',
             buscar: 'Buscar Ofertas',
             historico: 'Histórico',
+            recorrentes: 'Produtos Recorrentes',
             config: 'Configurações',
         };
         document.getElementById('pageTitle').textContent = titles[tabName] || tabName;
 
         // Show/hide tabs
-        ['Dashboard', 'Ofertas', 'Buscar', 'Historico', 'Config'].forEach(t => {
+        ['Dashboard', 'Ofertas', 'Buscar', 'Historico', 'Recorrentes', 'Config'].forEach(t => {
             const section = document.getElementById('tab' + t);
             if (section) section.style.display = 'none';
         });
@@ -70,6 +71,7 @@ const App = {
         this.currentTab = tabName;
 
         if (tabName === 'historico') this.carregarHistorico();
+        if (tabName === 'recorrentes') this.carregarRecorrentes();
 
         // Close mobile sidebar
         document.querySelector('.sidebar')?.classList.remove('open');
@@ -513,6 +515,146 @@ const App = {
             document.getElementById('cfgChatId').value = cfg.telegram_chat_id || '';
         } catch (e) { console.error('Erro config:', e); }
     },
+
+    // =============================================
+    // PRODUTOS RECORRENTES
+    // =============================================
+
+    async carregarRecorrentes() {
+        const box = document.getElementById('recorrentesList');
+        try {
+            const resp = await fetch(`${API}/api/produtos-recorrentes`);
+            const lista = await resp.json();
+            if (!lista.length) {
+                box.innerHTML = `
+                    <div class="empty">
+                        <div class="empty-icon">⭐</div>
+                        <div class="empty-text">Nenhum produto monitorado</div>
+                        <div class="empty-hint">Clique em "Monitorar Produto"</div>
+                    </div>`;
+                return;
+            }
+            box.innerHTML = `
+                <table class="data-table">
+                    <thead><tr>
+                        <th>Produto</th><th>Loja</th><th>Alvo</th><th>Atual</th><th>Menor</th><th>Ativo</th><th></th>
+                    </tr></thead>
+                    <tbody>${lista.map(p => this._rowRecorrente(p)).join('')}</tbody>
+                </table>`;
+        } catch (e) {
+            box.innerHTML = `<div class="empty"><div class="empty-text">Erro ao carregar</div></div>`;
+            console.error('Erro recorrentes:', e);
+        }
+    },
+
+    _rowRecorrente(p) {
+        const dep = p.departamento_emoji ? `${p.departamento_emoji} ` : '';
+        return `
+            <tr>
+                <td>${dep}${this._esc(p.titulo)}</td>
+                <td>${this._esc(p.loja || '—')}</td>
+                <td>${p.preco_alvo ? this.fmtPreco(p.preco_alvo) : '—'}</td>
+                <td>${p.preco_atual ? this.fmtPreco(p.preco_atual) : '—'}</td>
+                <td>${p.preco_minimo ? this.fmtPreco(p.preco_minimo) : '—'}</td>
+                <td>
+                    <button class="chip ${p.ativo ? 'active' : ''}" onclick="App.toggleRecorrente(${p.id}, ${p.ativo ? 0 : 1})">
+                        ${p.ativo ? 'Sim' : 'Não'}
+                    </button>
+                </td>
+                <td style="white-space:nowrap;">
+                    <button class="btn btn-ghost btn-sm" onclick="App.verHistorico(${JSON.stringify(p.titulo)})">📊</button>
+                    <button class="btn btn-danger btn-sm btn-icon" onclick="App.deletarRecorrente(${p.id})" title="Remover">🗑️</button>
+                </td>
+            </tr>`;
+    },
+
+    abrirModalRecorrente() { document.getElementById('modalRecorrente').style.display = ''; },
+    fecharModalRecorrente() { document.getElementById('modalRecorrente').style.display = 'none'; },
+
+    async salvarRecorrente() {
+        const titulo = document.getElementById('recTitulo').value.trim();
+        if (!titulo) { this.toast('Informe o título', 'error'); return; }
+        const dados = {
+            titulo,
+            loja: document.getElementById('recLoja').value,
+            preco_alvo: parseFloat(document.getElementById('recPrecoAlvo').value) || null,
+            link_original: document.getElementById('recLink').value.trim() || null,
+        };
+        try {
+            await fetch(`${API}/api/produtos-recorrentes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(dados),
+            });
+            this.toast('Produto monitorado!', 'success');
+            this.fecharModalRecorrente();
+            ['recTitulo', 'recPrecoAlvo', 'recLink'].forEach(id => document.getElementById(id).value = '');
+            await this.carregarRecorrentes();
+        } catch (e) { this.toast(`Erro: ${e.message}`, 'error'); }
+    },
+
+    async toggleRecorrente(id, ativo) {
+        try {
+            await fetch(`${API}/api/produtos-recorrentes/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ativo }),
+            });
+            await this.carregarRecorrentes();
+        } catch (e) { this.toast(`Erro: ${e.message}`, 'error'); }
+    },
+
+    async deletarRecorrente(id) {
+        if (!confirm('Parar de monitorar este produto?')) return;
+        try {
+            await fetch(`${API}/api/produtos-recorrentes/${id}`, { method: 'DELETE' });
+            this.toast('Removido', 'info');
+            await this.carregarRecorrentes();
+        } catch (e) { this.toast(`Erro: ${e.message}`, 'error'); }
+    },
+
+    // =============================================
+    // HISTÓRICO DE PREÇOS
+    // =============================================
+
+    async verHistorico(titulo) {
+        const body = document.getElementById('histPrecoBody');
+        body.innerHTML = `<div class="empty"><div class="empty-icon">📊</div><div class="empty-text">Carregando...</div></div>`;
+        document.getElementById('modalHistPreco').style.display = '';
+        try {
+            const resp = await fetch(`${API}/api/historico-precos?titulo=${encodeURIComponent(titulo)}&limite=60`);
+            const dados = await resp.json();
+            if (!dados.length) {
+                body.innerHTML = `<div class="empty"><div class="empty-icon">📊</div><div class="empty-text">Sem histórico ainda</div><div class="empty-hint">O preço é registrado a cada busca</div></div>`;
+                return;
+            }
+            // Ordena cronológico (API vem desc)
+            const serie = [...dados].reverse();
+            const precos = serie.map(d => d.preco);
+            const min = Math.min(...precos), max = Math.max(...precos);
+            const range = max - min || 1;
+            const barras = serie.map(d => {
+                const h = 10 + ((d.preco - min) / range) * 90; // 10%..100%
+                const ehMin = d.preco === min;
+                return `<div class="hp-bar" style="height:${h}%; background:${ehMin ? 'var(--success, #22c55e)' : 'var(--brand-primary)'};"
+                            title="${this.fmtData(d.registrado_em)} · ${this.fmtPreco(d.preco)}"></div>`;
+            }).join('');
+            body.innerHTML = `
+                <div style="font-size:13px;color:var(--text-secondary);margin-bottom:6px;">
+                    ${this._esc(titulo)}
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px;">
+                    <span>📉 Menor: <strong style="color:var(--success,#22c55e)">${this.fmtPreco(min)}</strong></span>
+                    <span>📈 Maior: <strong>${this.fmtPreco(max)}</strong></span>
+                    <span>${serie.length} registros</span>
+                </div>
+                <div class="hp-chart">${barras}</div>`;
+        } catch (e) {
+            body.innerHTML = `<div class="empty"><div class="empty-text">Erro: ${e.message}</div></div>`;
+        }
+    },
+
+    fecharModalHistPreco() { document.getElementById('modalHistPreco').style.display = 'none'; },
 
     // =============================================
     // TOAST

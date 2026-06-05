@@ -41,6 +41,10 @@
                 <span class="nav-icon">📋</span>
                 <span class="nav-label">Histórico</span>
             </button>
+            <button class="nav-item" data-tab="recorrentes" onclick="App.switchTab('recorrentes', this)">
+                <span class="nav-icon">⭐</span>
+                <span class="nav-label">Recorrentes</span>
+            </button>
             <button class="nav-item" data-tab="config" onclick="App.switchTab('config', this)">
                 <span class="nav-icon">⚙️</span>
                 <span class="nav-label">Configurações</span>
@@ -216,6 +220,28 @@
                 </div>
             </section>
 
+            <!-- ===== TAB: RECORRENTES ===== -->
+            <section id="tabRecorrentes" style="display:none;">
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">⭐ Produtos Recorrentes (Best Sellers)</div>
+                        <button class="btn btn-brand btn-sm" onclick="App.abrirModalRecorrente()">+ Monitorar Produto</button>
+                    </div>
+                    <div class="panel-body">
+                        <p style="font-size:12px;color:var(--text-tertiary);margin-bottom:14px;">
+                            Cadastre produtos que vendem bem. O sistema guarda o menor preço já visto e o histórico.
+                        </p>
+                        <div id="recorrentesList">
+                            <div class="empty">
+                                <div class="empty-icon">⭐</div>
+                                <div class="empty-text">Nenhum produto monitorado</div>
+                                <div class="empty-hint">Clique em "Monitorar Produto"</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- ===== TAB: CONFIG ===== -->
             <section id="tabConfig" style="display:none;">
                 <div class="panel">
@@ -325,6 +351,51 @@
             <div class="modal-footer">
                 <button class="btn btn-ghost" onclick="App.fecharModalLink()">Cancelar</button>
                 <button class="btn btn-success" onclick="App.salvarLinkAfiliado()">Salvar Link</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: NOVO RECORRENTE -->
+    <div class="modal-backdrop" id="modalRecorrente" style="display:none;" onclick="if(event.target===this) App.fecharModalRecorrente()">
+        <div class="modal-box">
+            <div class="modal-title">⭐ Monitorar Produto</div>
+            <div class="form-group">
+                <label class="form-label">Título do Produto *</label>
+                <input type="text" class="form-input" id="recTitulo" placeholder="Ex: Creatina Integralmedica 300g">
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div class="form-group">
+                    <label class="form-label">Loja</label>
+                    <select class="form-input form-select" id="recLoja">
+                        <option value="Mercado Livre">Mercado Livre</option>
+                        <option value="Shopee">Shopee</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Preço Alvo (R$)</label>
+                    <input type="number" class="form-input" id="recPrecoAlvo" step="0.01" placeholder="59.90">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Link do Produto</label>
+                <input type="text" class="form-input" id="recLink" placeholder="https://...">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="App.fecharModalRecorrente()">Cancelar</button>
+                <button class="btn btn-brand" onclick="App.salvarRecorrente()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: HISTÓRICO DE PREÇOS -->
+    <div class="modal-backdrop" id="modalHistPreco" style="display:none;" onclick="if(event.target===this) App.fecharModalHistPreco()">
+        <div class="modal-box">
+            <div class="modal-title">📊 Histórico de Preços</div>
+            <div id="histPrecoBody">
+                <div class="empty"><div class="empty-icon">📊</div><div class="empty-text">Carregando...</div></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="App.fecharModalHistPreco()">Fechar</button>
             </div>
         </div>
     </div>
