@@ -59,6 +59,11 @@ class Config:
     BUSCA_PRECO_MAXIMO: float = float(os.getenv("BUSCA_PRECO_MAXIMO", "500"))
     PAUSA_ENTRE_POSTS: int = int(os.getenv("PAUSA_ENTRE_POSTS", "3"))
 
+    # --- Painel (autenticação básica) ---
+    # PANEL_PASSWORD vazio = auth DESLIGADA (dev local). Defina p/ proteger o painel.
+    PANEL_USER: str = os.getenv("PANEL_USER", "admin")
+    PANEL_PASSWORD: str = os.getenv("PANEL_PASSWORD", "")
+
     # --- Auto-Post (postagem automatica pelo agendador) ---
     # Desligado por padrao: so posta sozinho quando explicitamente ativado.
     AUTO_POST_ENABLED: bool = os.getenv("AUTO_POST_ENABLED", "False").lower() == "true"
