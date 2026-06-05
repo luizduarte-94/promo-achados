@@ -143,14 +143,14 @@ def init_db():
     count = conn.execute("SELECT COUNT(*) FROM departamentos").fetchone()[0]
     if count == 0:
         departamentos_padrao = [
-            ("Fitness & Academia", "💪", "creatina,whey protein,bcaa,glutamina,pre treino,barra proteica,academia,suplemento"),
-            ("Bebê & Fraldas", "🍼", "fralda,fralda pampers,fralda huggies,lenco umedecido,pomada assadura,bebe,mamadeira"),
-            ("Saúde & Beleza", "💄", "protetor solar,shampoo,perfume,maquiagem,skincare,hidratante,creme,cabelo"),
-            ("Eletrônicos", "📱", "notebook,fone bluetooth,smart tv,tablet,smartwatch,celular,monitor,ssd,mouse,teclado"),
-            ("Casa & Limpeza", "🏠", "detergente,amaciante,papel higienico,aspirador,panela,limpeza,organizador"),
-            ("Games", "🎮", "playstation,xbox,nintendo,controle,jogo,headset gamer,cadeira gamer"),
-            ("Moda & Acessórios", "👗", "tenis,roupa,camisa,relogio,bolsa,oculos,jaqueta"),
-            ("Alimentos & Bebidas", "🍕", "cafe,chocolate,biscoito,cerveja,vinho,leite,cereal"),
+            ("Fitness & Academia", "💪", "creatina,whey,whey protein,proteina,albumina,bcaa,glutamina,pre treino,barra proteica,academia,suplemento,maltodextrina,amendoim,pasta de amendoim,dr peanut"),
+            ("Bebê & Fraldas", "🍼", "fralda,fraldas,pampers,huggies,lenco umedecido,pomada assadura,bebe,mamadeira,infantil"),
+            ("Saúde & Beleza", "💄", "protetor solar,shampoo,condicionador,perfume,maquiagem,skincare,hidratante,creme,cabelo,desodorante,sabonete,serum"),
+            ("Eletrônicos", "📱", "notebook,fone,fone de ouvido,fone bluetooth,buds,airpods,headphone,headset,smart tv,tv,qled,oled,tablet,smartwatch,celular,smartphone,monitor,ssd,mouse,teclado,carregador,powerbank,caixa de som"),
+            ("Casa & Limpeza", "🏠", "detergente,amaciante,papel higienico,aspirador,panela,limpeza,organizador,vassoura,esponja"),
+            ("Games", "🎮", "playstation,xbox,nintendo,controle,jogo,headset gamer,cadeira gamer,console,gamer"),
+            ("Moda & Acessórios", "👗", "tenis,roupa,camisa,camiseta,relogio,bolsa,oculos,jaqueta,calca,vestido"),
+            ("Alimentos & Bebidas", "🍕", "cafe,chocolate,biscoito,cerveja,vinho,leite,cereal,tahine,manteiga,azeite,achocolatado"),
         ]
         conn.executemany(
             "INSERT INTO departamentos (nome, emoji, palavras_chave) VALUES (?, ?, ?)",
@@ -476,18 +476,27 @@ def atualizar_departamento(dep_id: int, dados: dict) -> bool:
 
 
 def classificar_departamento(titulo: str) -> int | None:
-    """Classifica automaticamente uma oferta em um departamento baseado no título."""
-    deps = listar_departamentos()
-    titulo_lower = titulo.lower()
+    """Classifica automaticamente uma oferta em um departamento baseado no título.
+
+    Casa por PALAVRAS (não substring contíguo): uma keyword de várias palavras
+    (ex "fone bluetooth") casa quando todas as suas palavras aparecem no título,
+    mesmo separadas ("Fone De Ouvido Sem Fio Bluetooth"). Keyword de palavra
+    única casa por token exato (evita "tv" dentro de outra palavra).
+    Score = soma do tamanho das keywords que casaram (mais longa = mais específica).
+    """
+    tokens = set(re.findall(r"[a-z0-9]+", titulo.lower()))
+    if not tokens:
+        return None
+
     melhor_score = 0
     melhor_dep_id = None
-
-    for dep in deps:
-        palavras = [p.strip().lower() for p in dep.get("palavras_chave", "").split(",") if p.strip()]
+    for dep in listar_departamentos():
+        keywords = [k.strip().lower() for k in dep.get("palavras_chave", "").split(",") if k.strip()]
         score = 0
-        for palavra in palavras:
-            if palavra in titulo_lower:
-                score += len(palavra)  # Palavras mais longas = match mais específico
+        for kw in keywords:
+            palavras_kw = kw.split()
+            if all(p in tokens for p in palavras_kw):
+                score += len(kw)
         if score > melhor_score:
             melhor_score = score
             melhor_dep_id = dep["id"]
