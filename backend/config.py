@@ -70,6 +70,11 @@ class Config:
     AUTO_POST_SCORE_MINIMO: int = int(os.getenv("AUTO_POST_SCORE_MINIMO", "60"))
     AUTO_POST_MAX_POR_CICLO: int = int(os.getenv("AUTO_POST_MAX_POR_CICLO", "3"))
 
+    # --- Monitoramento de Recorrentes (alerta de queda de preco) ---
+    # Desligado por padrao. Quando ligado, rebusca os recorrentes e alerta no Telegram.
+    MONITOR_RECORRENTES_ENABLED: bool = os.getenv("MONITOR_RECORRENTES_ENABLED", "False").lower() == "true"
+    MONITOR_RECORRENTES_INTERVALO_MINUTOS: int = int(os.getenv("MONITOR_RECORRENTES_INTERVALO_MINUTOS", "360"))
+
     @classmethod
     def telegram_ok(cls) -> bool:
         return bool(cls.TELEGRAM_BOT_TOKEN and "COLE" not in cls.TELEGRAM_BOT_TOKEN)

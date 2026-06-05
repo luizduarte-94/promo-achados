@@ -26,10 +26,14 @@ class MercadoLivreScraper(BaseScraper):
     def __init__(self):
         pass
 
-    def buscar(self, palavra_chave: str, limite: int = 20) -> list[dict]:
+    def buscar(self, palavra_chave: str, limite: int = 20, filtrar_qualidade: bool = True) -> list[dict]:
         """
         Busca produtos no ML via HTML scraping.
-        Filtra por desconto minimo e preco maximo.
+
+        Por padrao filtra por desconto minimo e preco maximo. Passe
+        filtrar_qualidade=False para obter o preco bruto de todos os itens
+        (usado pelo monitoramento de recorrentes, que precisa do preco
+        independente de desconto).
         """
         url = f"https://lista.mercadolivre.com.br/{palavra_chave.replace(' ', '-')}"
 
@@ -46,7 +50,7 @@ class MercadoLivreScraper(BaseScraper):
 
         for item in resultados_brutos[:50]:  # Máximo de 50 resultados analisados
             oferta = self._parsear_item(item)
-            if oferta and self._filtro_qualidade(oferta):
+            if oferta and (not filtrar_qualidade or self._filtro_qualidade(oferta)):
                 ofertas.append(oferta)
 
             if len(ofertas) >= limite:

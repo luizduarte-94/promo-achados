@@ -4,6 +4,7 @@ Agendador de tarefas — busca automática de ofertas em intervalos configuráve
 """
 
 import time
+from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from backend.scrapers.mercadolivre import MercadoLivreScraper
@@ -117,6 +118,104 @@ def tarefa_busca_automatica():
     print("=" * 50 + "\n")
 
 
+def _casar_recorrente(rec: dict, resultados: list[dict]) -> dict | None:
+    """Escolhe, entre os resultados da busca, qual corresponde ao recorrente.
+
+    Prioriza o resultado com mesmo ID de produto (MLB/Shopee) quando o
+    recorrente tem link; caso contrário, pega o de menor preço.
+    """
+    if not resultados:
+        return None
+
+    pid = db.extrair_produto_id(rec.get("link_original"))
+    if pid:
+        for r in resultados:
+            if db.extrair_produto_id(r.get("link_original")) == pid:
+                return r
+
+    return min(resultados, key=lambda r: r.get("preco", float("inf")))
+
+
+def monitorar_recorrentes():
+    """Rebusca os produtos recorrentes e alerta no Telegram quando o preço cai.
+
+    No-op se MONITOR_RECORRENTES_ENABLED=false. Alerta quando o preço atual
+    cruza o preço alvo OU bate um novo menor preço histórico.
+    """
+    if not config.MONITOR_RECORRENTES_ENABLED:
+        return
+    if not telegram.esta_configurado():
+        print("[MONITOR] Telegram não configurado. Pulando.")
+        return
+
+    recorrentes = db.listar_produtos_recorrentes(apenas_ativos=True)
+    if not recorrentes:
+        print("[MONITOR] Nenhum recorrente ativo.")
+        return
+
+    print(f"[MONITOR] Checando {len(recorrentes)} produto(s) recorrente(s)...")
+    for rec in recorrentes:
+        try:
+            resultados = ml_scraper.buscar(rec["titulo"], filtrar_qualidade=False)
+            match = _casar_recorrente(rec, resultados)
+            agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            if not match:
+                db.atualizar_produto_recorrente(rec["id"], {"ultimo_check": agora})
+                print(f"[MONITOR] #{rec['id']} sem match para '{rec['titulo']}'")
+                continue
+
+            preco_novo = match["preco"]
+            alvo = rec.get("preco_alvo")
+            min_ant = rec.get("preco_minimo")
+            atual_ant = rec.get("preco_atual")
+
+            # Histórico (alimenta o gráfico da UI)
+            db.registrar_preco(
+                titulo=rec["titulo"],
+                preco=preco_novo,
+                link_original=match.get("link_original") or rec.get("link_original"),
+                loja=match.get("loja", rec.get("loja")),
+                preco_original=match.get("preco_original"),
+                departamento_id=rec.get("departamento_id"),
+            )
+
+            # Decisão de alerta (anti-spam: alvo só ao cruzar; mínimo só se estritamente menor)
+            bateu_alvo = bool(alvo) and preco_novo <= alvo and (atual_ant is None or atual_ant > alvo)
+            novo_min = min_ant is not None and preco_novo < min_ant
+            deve_alertar = bateu_alvo or novo_min
+
+            # Update do recorrente
+            novo_minimo = preco_novo if min_ant is None else min(min_ant, preco_novo)
+            db.atualizar_produto_recorrente(rec["id"], {
+                "preco_atual": preco_novo,
+                "preco_minimo": novo_minimo,
+                "ultimo_check": agora,
+            })
+
+            if deve_alertar:
+                oferta = {
+                    "titulo": rec["titulo"],
+                    "preco": preco_novo,
+                    "preco_original": min_ant or alvo,
+                    "desconto_pct": match.get("desconto_pct", 0),
+                    "loja": match.get("loja", rec.get("loja", "Mercado Livre")),
+                    "link_original": match.get("link_original") or rec.get("link_original"),
+                    "link_afiliado": None,
+                    "imagem_url": match.get("imagem_url"),
+                    "frete_gratis": match.get("frete_gratis", False),
+                    "dados_extra": match.get("dados_extra", {}),
+                }
+                resultado = telegram.enviar(oferta)
+                motivo = "alvo" if bateu_alvo else "novo minimo"
+                print(f"[MONITOR] #{rec['id']} BAIXOU ({motivo}) -> R${preco_novo} | telegram={resultado['sucesso']}")
+                time.sleep(config.PAUSA_ENTRE_POSTS)
+            else:
+                print(f"[MONITOR] #{rec['id']} sem queda relevante (R${preco_novo})")
+        except Exception as e:
+            print(f"[MONITOR] Erro no recorrente #{rec.get('id')}: {e}")
+
+
 def iniciar_agendador():
     """Inicia o agendador de buscas automáticas."""
     intervalo = config.BUSCA_INTERVALO_MINUTOS
@@ -128,6 +227,17 @@ def iniciar_agendador():
         id="busca_automatica",
         replace_existing=True,
     )
+
+    if config.MONITOR_RECORRENTES_ENABLED:
+        intervalo_mon = config.MONITOR_RECORRENTES_INTERVALO_MINUTOS
+        scheduler.add_job(
+            monitorar_recorrentes,
+            "interval",
+            minutes=intervalo_mon,
+            id="monitor_recorrentes",
+            replace_existing=True,
+        )
+        print(f"[AGENDADOR] Monitoramento de recorrentes agendado a cada {intervalo_mon} minutos")
 
     scheduler.start()
     print(f"[AGENDADOR] Busca automática agendada a cada {intervalo} minutos")
