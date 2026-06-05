@@ -1,0 +1,566 @@
+# -*- coding: utf-8 -*-
+"""
+Banco de dados SQLite — modelos e operações.
+"""
+
+import sqlite3
+import json
+from datetime import datetime
+from pathlib import Path
+from backend.config import config
+
+
+def _get_conn() -> sqlite3.Connection:
+    """Retorna conexão com row_factory configurada."""
+    conn = sqlite3.connect(str(config.DB_PATH))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def init_db():
+    """Cria as tabelas se não existirem."""
+    conn = _get_conn()
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS ofertas (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo          TEXT NOT NULL,
+            preco           REAL NOT NULL,
+            preco_original  REAL,
+            desconto_pct    REAL DEFAULT 0,
+            loja            TEXT NOT NULL DEFAULT 'Mercado Livre',
+            link_original   TEXT,
+            link_afiliado   TEXT,
+            imagem_url      TEXT,
+            categoria       TEXT,
+            vendedor        TEXT,
+            reputacao       TEXT,
+            frete_gratis    INTEGER DEFAULT 0,
+            status          TEXT DEFAULT 'pendente',
+            fonte           TEXT DEFAULT 'manual',
+            dados_extra     TEXT,
+            departamento_id INTEGER,
+            criado_em       TEXT DEFAULT (datetime('now', 'localtime')),
+            atualizado_em   TEXT DEFAULT (datetime('now', 'localtime')),
+            FOREIGN KEY (departamento_id) REFERENCES departamentos(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS postagens (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            oferta_id   INTEGER NOT NULL,
+            canal       TEXT NOT NULL,
+            sucesso     INTEGER DEFAULT 0,
+            resposta    TEXT,
+            postado_em  TEXT DEFAULT (datetime('now', 'localtime')),
+            FOREIGN KEY (oferta_id) REFERENCES ofertas(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS configuracoes (
+            chave   TEXT PRIMARY KEY,
+            valor   TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS historico_buscas (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            fonte           TEXT NOT NULL,
+            palavra_chave   TEXT,
+            qtd_resultados  INTEGER DEFAULT 0,
+            buscado_em      TEXT DEFAULT (datetime('now', 'localtime'))
+        );
+
+        -- NOVOS: Departamentos
+        CREATE TABLE IF NOT EXISTS departamentos (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome            TEXT NOT NULL UNIQUE,
+            emoji           TEXT DEFAULT '📦',
+            palavras_chave  TEXT,
+            ativo           INTEGER DEFAULT 1,
+            criado_em       TEXT DEFAULT (datetime('now', 'localtime'))
+        );
+
+        -- NOVOS: Histórico de Preços (rastreamento ao longo do tempo)
+        CREATE TABLE IF NOT EXISTS historico_precos (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo          TEXT NOT NULL,
+            link_original   TEXT,
+            loja            TEXT,
+            preco           REAL NOT NULL,
+            preco_original  REAL,
+            departamento_id INTEGER,
+            registrado_em   TEXT DEFAULT (datetime('now', 'localtime')),
+            FOREIGN KEY (departamento_id) REFERENCES departamentos(id)
+        );
+
+        -- NOVOS: Produtos Recorrentes (monitoramento contínuo de best sellers)
+        CREATE TABLE IF NOT EXISTS produtos_recorrentes (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo          TEXT NOT NULL,
+            link_original   TEXT,
+            loja            TEXT DEFAULT 'Mercado Livre',
+            preco_alvo      REAL,
+            preco_atual     REAL,
+            preco_minimo    REAL,
+            departamento_id INTEGER,
+            ativo           INTEGER DEFAULT 1,
+            ultimo_check    TEXT,
+            criado_em       TEXT DEFAULT (datetime('now', 'localtime')),
+            FOREIGN KEY (departamento_id) REFERENCES departamentos(id)
+        );
+    """)
+
+    # Migração: adicionar coluna departamento_id se não existir
+    try:
+        conn.execute("SELECT departamento_id FROM ofertas LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE ofertas ADD COLUMN departamento_id INTEGER")
+
+    # Inserir departamentos padrão se a tabela estiver vazia
+    count = conn.execute("SELECT COUNT(*) FROM departamentos").fetchone()[0]
+    if count == 0:
+        departamentos_padrao = [
+            ("Fitness & Academia", "💪", "creatina,whey protein,bcaa,glutamina,pre treino,barra proteica,academia,suplemento"),
+            ("Bebê & Fraldas", "🍼", "fralda,fralda pampers,fralda huggies,lenco umedecido,pomada assadura,bebe,mamadeira"),
+            ("Saúde & Beleza", "💄", "protetor solar,shampoo,perfume,maquiagem,skincare,hidratante,creme,cabelo"),
+            ("Eletrônicos", "📱", "notebook,fone bluetooth,smart tv,tablet,smartwatch,celular,monitor,ssd,mouse,teclado"),
+            ("Casa & Limpeza", "🏠", "detergente,amaciante,papel higienico,aspirador,panela,limpeza,organizador"),
+            ("Games", "🎮", "playstation,xbox,nintendo,controle,jogo,headset gamer,cadeira gamer"),
+            ("Moda & Acessórios", "👗", "tenis,roupa,camisa,relogio,bolsa,oculos,jaqueta"),
+            ("Alimentos & Bebidas", "🍕", "cafe,chocolate,biscoito,cerveja,vinho,leite,cereal"),
+        ]
+        conn.executemany(
+            "INSERT INTO departamentos (nome, emoji, palavras_chave) VALUES (?, ?, ?)",
+            departamentos_padrao,
+        )
+
+    conn.commit()
+    conn.close()
+
+
+# =============================================
+# OFERTAS
+# =============================================
+
+def criar_oferta(dados: dict) -> int:
+    """Insere uma oferta e retorna o ID."""
+    conn = _get_conn()
+    cur = conn.execute("""
+        INSERT INTO ofertas (titulo, preco, preco_original, desconto_pct, loja,
+                             link_original, link_afiliado, imagem_url, categoria,
+                             vendedor, reputacao, frete_gratis, status, fonte, dados_extra)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        dados.get("titulo", ""),
+        dados.get("preco", 0),
+        dados.get("preco_original"),
+        dados.get("desconto_pct", 0),
+        dados.get("loja", "Mercado Livre"),
+        dados.get("link_original"),
+        dados.get("link_afiliado"),
+        dados.get("imagem_url"),
+        dados.get("categoria"),
+        dados.get("vendedor"),
+        dados.get("reputacao"),
+        dados.get("frete_gratis", 0),
+        dados.get("status", "pendente"),
+        dados.get("fonte", "manual"),
+        json.dumps(dados.get("dados_extra")) if dados.get("dados_extra") else None,
+    ))
+    conn.commit()
+    oferta_id = cur.lastrowid
+    conn.close()
+    return oferta_id
+
+
+def _parse_row(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    if d.get("dados_extra"):
+        try:
+            d["dados_extra"] = json.loads(d["dados_extra"])
+        except json.JSONDecodeError:
+            d["dados_extra"] = {}
+    else:
+        d["dados_extra"] = {}
+    return d
+
+
+def listar_ofertas(status: str = None, loja: str = None, limite: int = 100) -> list[dict]:
+    """Lista ofertas com filtros opcionais."""
+    conn = _get_conn()
+    query = "SELECT * FROM ofertas WHERE 1=1"
+    params = []
+
+    if status:
+        query += " AND status = ?"
+        params.append(status)
+    if loja:
+        query += " AND loja = ?"
+        params.append(loja)
+
+    query += " ORDER BY criado_em DESC LIMIT ?"
+    params.append(limite)
+
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [_parse_row(r) for r in rows]
+
+
+def obter_oferta(oferta_id: int) -> dict | None:
+    """Retorna uma oferta pelo ID."""
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM ofertas WHERE id = ?", (oferta_id,)).fetchone()
+    conn.close()
+    return _parse_row(row) if row else None
+
+
+def atualizar_oferta(oferta_id: int, dados: dict) -> bool:
+    """Atualiza campos de uma oferta."""
+    conn = _get_conn()
+    campos = []
+    valores = []
+    for chave in ("titulo", "preco", "preco_original", "desconto_pct", "loja",
+                   "link_original", "link_afiliado", "imagem_url", "categoria",
+                   "vendedor", "reputacao", "frete_gratis", "status"):
+        if chave in dados:
+            campos.append(f"{chave} = ?")
+            valores.append(dados[chave])
+
+    if not campos:
+        conn.close()
+        return False
+
+    campos.append("atualizado_em = datetime('now', 'localtime')")
+    valores.append(oferta_id)
+
+    conn.execute(f"UPDATE ofertas SET {', '.join(campos)} WHERE id = ?", valores)
+    conn.commit()
+    conn.close()
+    return True
+
+
+def deletar_oferta(oferta_id: int) -> bool:
+    """Remove uma oferta."""
+    conn = _get_conn()
+    cur = conn.execute("DELETE FROM ofertas WHERE id = ?", (oferta_id,))
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0
+
+
+def oferta_existe(link_original: str) -> bool:
+    """Verifica se já existe oferta com este link original (evita duplicatas)."""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT id FROM ofertas WHERE link_original = ?", (link_original,)
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+# =============================================
+# POSTAGENS
+# =============================================
+
+def registrar_postagem(oferta_id: int, canal: str, sucesso: bool, resposta: str = None):
+    """Registra uma postagem feita."""
+    conn = _get_conn()
+    conn.execute("""
+        INSERT INTO postagens (oferta_id, canal, sucesso, resposta)
+        VALUES (?, ?, ?, ?)
+    """, (oferta_id, canal, int(sucesso), resposta))
+
+    if sucesso:
+        conn.execute(
+            "UPDATE ofertas SET status = 'postada', atualizado_em = datetime('now', 'localtime') WHERE id = ?",
+            (oferta_id,)
+        )
+
+    conn.commit()
+    conn.close()
+
+
+def listar_postagens(limite: int = 50) -> list[dict]:
+    """Lista postagens recentes com dados da oferta."""
+    conn = _get_conn()
+    rows = conn.execute("""
+        SELECT p.*, o.titulo, o.loja, o.preco
+        FROM postagens p
+        JOIN ofertas o ON p.oferta_id = o.id
+        ORDER BY p.postado_em DESC
+        LIMIT ?
+    """, (limite,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# =============================================
+# ESTATÍSTICAS
+# =============================================
+
+def obter_stats() -> dict:
+    """Estatísticas para o dashboard."""
+    conn = _get_conn()
+
+    total = conn.execute("SELECT COUNT(*) FROM ofertas").fetchone()[0]
+    pendentes = conn.execute("SELECT COUNT(*) FROM ofertas WHERE status = 'pendente'").fetchone()[0]
+    postadas = conn.execute("SELECT COUNT(*) FROM ofertas WHERE status = 'postada'").fetchone()[0]
+
+    hoje = datetime.now().strftime("%Y-%m-%d")
+    postadas_hoje = conn.execute(
+        "SELECT COUNT(*) FROM postagens WHERE postado_em LIKE ?", (f"{hoje}%",)
+    ).fetchone()[0]
+
+    desconto_medio = conn.execute(
+        "SELECT COALESCE(AVG(desconto_pct), 0) FROM ofertas WHERE desconto_pct > 0"
+    ).fetchone()[0]
+
+    buscas_hoje = conn.execute(
+        "SELECT COUNT(*) FROM historico_buscas WHERE buscado_em LIKE ?", (f"{hoje}%",)
+    ).fetchone()[0]
+
+    conn.close()
+    return {
+        "total_ofertas": total,
+        "pendentes": pendentes,
+        "postadas": postadas,
+        "postadas_hoje": postadas_hoje,
+        "desconto_medio": round(desconto_medio, 1),
+        "buscas_hoje": buscas_hoje,
+    }
+
+
+# =============================================
+# HISTÓRICO DE BUSCAS
+# =============================================
+
+def registrar_busca(fonte: str, palavra_chave: str, qtd: int):
+    """Registra uma busca realizada."""
+    conn = _get_conn()
+    conn.execute("""
+        INSERT INTO historico_buscas (fonte, palavra_chave, qtd_resultados)
+        VALUES (?, ?, ?)
+    """, (fonte, palavra_chave, qtd))
+    conn.commit()
+    conn.close()
+
+
+# =============================================
+# CONFIGURAÇÕES ADICIONAIS
+# =============================================
+
+def obter_configuracao(chave: str) -> str | None:
+    """Retorna o valor de uma chave na tabela configuracoes."""
+    conn = _get_conn()
+    row = conn.execute("SELECT valor FROM configuracoes WHERE chave = ?", (chave,)).fetchone()
+    conn.close()
+    return row["valor"] if row else None
+
+
+def definir_configuracao(chave: str, valor: str):
+    """Define ou atualiza o valor de uma chave na tabela configuracoes."""
+    conn = _get_conn()
+    conn.execute("""
+        INSERT INTO configuracoes (chave, valor)
+        VALUES (?, ?)
+        ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor
+    """, (chave, valor))
+    conn.commit()
+    conn.close()
+
+
+# =============================================
+# DEPARTAMENTOS
+# =============================================
+
+def listar_departamentos(apenas_ativos: bool = True) -> list[dict]:
+    """Lista todos os departamentos."""
+    conn = _get_conn()
+    query = "SELECT * FROM departamentos"
+    if apenas_ativos:
+        query += " WHERE ativo = 1"
+    query += " ORDER BY nome"
+    rows = conn.execute(query).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def obter_departamento(dep_id: int) -> dict | None:
+    """Retorna um departamento pelo ID."""
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM departamentos WHERE id = ?", (dep_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def criar_departamento(nome: str, emoji: str = "📦", palavras_chave: str = "") -> int:
+    """Cria um departamento e retorna o ID."""
+    conn = _get_conn()
+    cur = conn.execute(
+        "INSERT INTO departamentos (nome, emoji, palavras_chave) VALUES (?, ?, ?)",
+        (nome, emoji, palavras_chave),
+    )
+    conn.commit()
+    dep_id = cur.lastrowid
+    conn.close()
+    return dep_id
+
+
+def atualizar_departamento(dep_id: int, dados: dict) -> bool:
+    """Atualiza um departamento."""
+    conn = _get_conn()
+    campos = []
+    valores = []
+    for chave in ("nome", "emoji", "palavras_chave", "ativo"):
+        if chave in dados:
+            campos.append(f"{chave} = ?")
+            valores.append(dados[chave])
+    if not campos:
+        conn.close()
+        return False
+    valores.append(dep_id)
+    conn.execute(f"UPDATE departamentos SET {', '.join(campos)} WHERE id = ?", valores)
+    conn.commit()
+    conn.close()
+    return True
+
+
+def classificar_departamento(titulo: str) -> int | None:
+    """Classifica automaticamente uma oferta em um departamento baseado no título."""
+    deps = listar_departamentos()
+    titulo_lower = titulo.lower()
+    melhor_score = 0
+    melhor_dep_id = None
+
+    for dep in deps:
+        palavras = [p.strip().lower() for p in dep.get("palavras_chave", "").split(",") if p.strip()]
+        score = 0
+        for palavra in palavras:
+            if palavra in titulo_lower:
+                score += len(palavra)  # Palavras mais longas = match mais específico
+        if score > melhor_score:
+            melhor_score = score
+            melhor_dep_id = dep["id"]
+
+    return melhor_dep_id
+
+
+# =============================================
+# HISTÓRICO DE PREÇOS
+# =============================================
+
+def registrar_preco(titulo: str, preco: float, link_original: str = None,
+                    loja: str = None, preco_original: float = None,
+                    departamento_id: int = None):
+    """Registra um snapshot de preço no histórico."""
+    conn = _get_conn()
+    conn.execute("""
+        INSERT INTO historico_precos (titulo, preco, link_original, loja,
+                                      preco_original, departamento_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (titulo, preco, link_original, loja, preco_original, departamento_id))
+    conn.commit()
+    conn.close()
+
+
+def obter_historico_precos(link_original: str = None, titulo: str = None,
+                           limite: int = 180) -> list[dict]:
+    """Retorna histórico de preços de um produto (por link ou título parcial)."""
+    conn = _get_conn()
+    if link_original:
+        rows = conn.execute(
+            "SELECT * FROM historico_precos WHERE link_original = ? ORDER BY registrado_em DESC LIMIT ?",
+            (link_original, limite),
+        ).fetchall()
+    elif titulo:
+        rows = conn.execute(
+            "SELECT * FROM historico_precos WHERE titulo LIKE ? ORDER BY registrado_em DESC LIMIT ?",
+            (f"%{titulo}%", limite),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM historico_precos ORDER BY registrado_em DESC LIMIT ?",
+            (limite,),
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def obter_menor_preco(link_original: str) -> float | None:
+    """Retorna o menor preço histórico de um produto."""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT MIN(preco) as menor FROM historico_precos WHERE link_original = ?",
+        (link_original,),
+    ).fetchone()
+    conn.close()
+    return row["menor"] if row and row["menor"] else None
+
+
+# =============================================
+# PRODUTOS RECORRENTES
+# =============================================
+
+def listar_produtos_recorrentes(apenas_ativos: bool = True) -> list[dict]:
+    """Lista produtos recorrentes (best sellers monitorados)."""
+    conn = _get_conn()
+    query = """
+        SELECT pr.*, d.nome as departamento_nome, d.emoji as departamento_emoji
+        FROM produtos_recorrentes pr
+        LEFT JOIN departamentos d ON pr.departamento_id = d.id
+    """
+    if apenas_ativos:
+        query += " WHERE pr.ativo = 1"
+    query += " ORDER BY pr.criado_em DESC"
+    rows = conn.execute(query).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def criar_produto_recorrente(dados: dict) -> int:
+    """Cadastra um produto recorrente para monitoramento."""
+    conn = _get_conn()
+    cur = conn.execute("""
+        INSERT INTO produtos_recorrentes (titulo, link_original, loja, preco_alvo,
+                                           preco_atual, departamento_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        dados.get("titulo", ""),
+        dados.get("link_original"),
+        dados.get("loja", "Mercado Livre"),
+        dados.get("preco_alvo"),
+        dados.get("preco_atual"),
+        dados.get("departamento_id"),
+    ))
+    conn.commit()
+    prod_id = cur.lastrowid
+    conn.close()
+    return prod_id
+
+
+def atualizar_produto_recorrente(prod_id: int, dados: dict) -> bool:
+    """Atualiza dados de um produto recorrente."""
+    conn = _get_conn()
+    campos = []
+    valores = []
+    for chave in ("titulo", "link_original", "loja", "preco_alvo", "preco_atual",
+                   "preco_minimo", "departamento_id", "ativo", "ultimo_check"):
+        if chave in dados:
+            campos.append(f"{chave} = ?")
+            valores.append(dados[chave])
+    if not campos:
+        conn.close()
+        return False
+    valores.append(prod_id)
+    conn.execute(f"UPDATE produtos_recorrentes SET {', '.join(campos)} WHERE id = ?", valores)
+    conn.commit()
+    conn.close()
+    return True
+
+
+def deletar_produto_recorrente(prod_id: int) -> bool:
+    """Remove um produto recorrente."""
+    conn = _get_conn()
+    cur = conn.execute("DELETE FROM produtos_recorrentes WHERE id = ?", (prod_id,))
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0

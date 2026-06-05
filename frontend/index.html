@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Promo Achados Brasil — Painel de automação de ofertas para afiliados">
+    <title>Promo Achados Brasil — Dashboard</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>">
+</head>
+<body>
+
+    <!-- MOBILE TOGGLE -->
+    <button class="sidebar-toggle" id="sidebarToggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">☰</button>
+
+    <!-- ========== SIDEBAR ========== -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+            <div class="sidebar-logo">🔥</div>
+            <div class="sidebar-brand-text">
+                <h1>Promo Achados</h1>
+                <span>Painel Afiliado</span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav" id="sidebarNav">
+            <button class="nav-item active" data-tab="dashboard" onclick="App.switchTab('dashboard', this)">
+                <span class="nav-icon">📊</span>
+                <span class="nav-label">Dashboard</span>
+            </button>
+            <button class="nav-item" data-tab="ofertas" onclick="App.switchTab('ofertas', this)">
+                <span class="nav-icon">📦</span>
+                <span class="nav-label">Ofertas</span>
+                <span class="nav-badge" id="navBadgeOfertas"></span>
+            </button>
+            <button class="nav-item" data-tab="buscar" onclick="App.switchTab('buscar', this)">
+                <span class="nav-icon">🔍</span>
+                <span class="nav-label">Buscar Ofertas</span>
+            </button>
+            <button class="nav-item" data-tab="historico" onclick="App.switchTab('historico', this)">
+                <span class="nav-icon">📋</span>
+                <span class="nav-label">Histórico</span>
+            </button>
+            <button class="nav-item" data-tab="config" onclick="App.switchTab('config', this)">
+                <span class="nav-icon">⚙️</span>
+                <span class="nav-label">Configurações</span>
+            </button>
+        </nav>
+
+        <div class="sidebar-footer" id="sidebarFooter">
+            <!-- Preenchido via JS -->
+        </div>
+    </aside>
+
+    <!-- ========== MAIN ========== -->
+    <div class="main-content">
+
+        <!-- TOPBAR -->
+        <header class="topbar">
+            <h2 class="topbar-title" id="pageTitle">Dashboard</h2>
+            <div class="topbar-actions">
+                <button class="btn btn-ghost btn-sm" onclick="App.carregarStats(); App.carregarOfertas()">🔄 Atualizar</button>
+                <button class="btn btn-brand btn-sm" onclick="App.abrirModalNovaOferta()">+ Nova Oferta</button>
+            </div>
+        </header>
+
+        <div class="content-area">
+
+            <!-- ===== TAB: DASHBOARD ===== -->
+            <section id="tabDashboard">
+                <div class="kpi-row" id="kpiRow">
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <div class="kpi-icon-wrap orange">📦</div>
+                        </div>
+                        <div class="kpi-value" id="kpiTotal">0</div>
+                        <div class="kpi-label">Total de Ofertas</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <div class="kpi-icon-wrap amber">⏳</div>
+                        </div>
+                        <div class="kpi-value" id="kpiPendentes">0</div>
+                        <div class="kpi-label">Pendentes</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <div class="kpi-icon-wrap green">✅</div>
+                        </div>
+                        <div class="kpi-value" id="kpiPostadas">0</div>
+                        <div class="kpi-label">Postadas</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <div class="kpi-icon-wrap green">📢</div>
+                        </div>
+                        <div class="kpi-value" id="kpiPostadasHoje">0</div>
+                        <div class="kpi-label">Postadas Hoje</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <div class="kpi-icon-wrap amber">📉</div>
+                        </div>
+                        <div class="kpi-value" id="kpiDesconto">0%</div>
+                        <div class="kpi-label">Desconto Médio</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <div class="kpi-icon-wrap blue">🔍</div>
+                        </div>
+                        <div class="kpi-value" id="kpiBuscas">0</div>
+                        <div class="kpi-label">Buscas Hoje</div>
+                    </div>
+                </div>
+
+                <!-- Quick actions on dashboard -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">⚡ Ações Rápidas</div>
+                    </div>
+                    <div class="panel-body" style="display:flex; gap:12px; flex-wrap:wrap;">
+                        <button class="btn btn-brand" onclick="App.switchTab('buscar', document.querySelector('[data-tab=buscar]'))">🔍 Buscar Ofertas</button>
+                        <button class="btn btn-ghost" onclick="App.abrirModalNovaOferta()">📦 Adicionar Manual</button>
+                        <button class="btn btn-ghost" onclick="App.buscarAuto()">⚡ Busca Automática</button>
+                    </div>
+                </div>
+
+                <!-- Recent history on dashboard -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">📋 Atividade Recente</div>
+                    </div>
+                    <div class="panel-body">
+                        <ul class="history-list" id="dashboardHistory">
+                            <div class="empty">
+                                <div class="empty-icon">📋</div>
+                                <div class="empty-text">Nenhuma atividade</div>
+                                <div class="empty-hint">Poste ofertas para ver o histórico aqui</div>
+                            </div>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== TAB: OFERTAS ===== -->
+            <section id="tabOfertas" style="display:none;">
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">📦 Suas Ofertas</div>
+                        <button class="btn btn-brand btn-sm" onclick="App.abrirModalNovaOferta()">+ Nova</button>
+                    </div>
+                    <div class="panel-body">
+                        <div class="filter-bar" id="filterBar">
+                            <button class="chip active" data-filter="todas" onclick="App.filtrar('todas')">Todas</button>
+                            <button class="chip" data-filter="pendente" onclick="App.filtrar('pendente')">Pendentes</button>
+                            <button class="chip" data-filter="postada" onclick="App.filtrar('postada')">Postadas</button>
+                            <button class="chip" data-filter="cupom" onclick="App.filtrar('cupom')">Com Cupom 🎟️</button>
+                            <button class="chip" data-filter="ml" onclick="App.filtrar('ml')">Mercado Livre</button>
+                            <button class="chip" data-filter="shopee" onclick="App.filtrar('shopee')">Shopee</button>
+                        </div>
+                        <div class="offers-grid" id="offersGrid">
+                            <div class="empty" style="grid-column:1/-1;">
+                                <div class="empty-icon">📦</div>
+                                <div class="empty-text">Nenhuma oferta ainda</div>
+                                <div class="empty-hint">Use "Buscar Ofertas" no menu</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== TAB: BUSCAR ===== -->
+            <section id="tabBuscar" style="display:none;">
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">🔍 Buscar Ofertas</div>
+                    </div>
+                    <div class="panel-body">
+                        <div class="search-row">
+                            <div class="search-field">
+                                <span class="icon">🔍</span>
+                                <input type="text" id="searchInput" placeholder="Ex: creatina, notebook gamer, fone bluetooth..."
+                                       onkeydown="if(event.key==='Enter') App.buscar()">
+                            </div>
+                            <button class="btn btn-brand" id="btnBuscar" onclick="App.buscar()">Buscar</button>
+                            <button class="btn btn-ghost" id="btnBuscarAuto" onclick="App.buscarAuto()">⚡ Auto</button>
+                        </div>
+                        <div class="source-toggles">
+                            <button class="source-toggle active-ml" id="toggleMl" onclick="this.classList.toggle('active-ml')">🟡 Mercado Livre</button>
+                            <button class="source-toggle" id="toggleShopee" onclick="this.classList.toggle('active-shopee')">🟠 Shopee</button>
+                        </div>
+                        <div id="searchResults" style="margin-top:20px;"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== TAB: HISTÓRICO ===== -->
+            <section id="tabHistorico" style="display:none;">
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">📋 Histórico de Postagens</div>
+                        <button class="btn btn-ghost btn-sm" onclick="App.carregarHistorico()">🔄 Atualizar</button>
+                    </div>
+                    <div class="panel-body">
+                        <ul class="history-list" id="historyList">
+                            <div class="empty">
+                                <div class="empty-icon">📋</div>
+                                <div class="empty-text">Nenhuma postagem</div>
+                                <div class="empty-hint">Poste ofertas para ver aqui</div>
+                            </div>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== TAB: CONFIG ===== -->
+            <section id="tabConfig" style="display:none;">
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">⚙️ Configurações</div>
+                    </div>
+                    <div class="panel-body">
+                        <div class="form-group">
+                            <label class="form-label">Palavras-chave automáticas</label>
+                            <input type="text" class="form-input" id="cfgPalavras" placeholder="creatina, whey, notebook...">
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+                            <div class="form-group">
+                                <label class="form-label">Intervalo de busca (min)</label>
+                                <input type="number" class="form-input" id="cfgIntervalo" value="60" min="5">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Desconto mínimo (%)</label>
+                                <input type="number" class="form-input" id="cfgDesconto" value="15" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Preço máximo (R$)</label>
+                                <input type="number" class="form-input" id="cfgPrecoMax" value="500" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Chat ID Telegram</label>
+                                <input type="text" class="form-input" id="cfgChatId" readonly>
+                            </div>
+                        </div>
+                        <p style="font-size:11px;color:var(--text-tertiary);margin-top:12px;">
+                            As credenciais e intervalos são gerenciados pelo arquivo <strong>.env</strong>. Reinicie o servidor após alterações.
+                        </p>
+                        
+                        <!-- Mercado Livre Connection Card -->
+                        <div style="border-top: 1px solid var(--border); margin-top: 20px; padding-top: 20px;">
+                            <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary);">🔌 Integração Oficial Mercado Livre</h3>
+                            <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-body); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border);">
+                                <div>
+                                    <div style="font-size: 13px; font-weight: 500;" id="mlConnectionStatus">Status: Verificando...</div>
+                                    <div style="font-size: 11px; color: var(--text-tertiary);" id="mlConnectionSubtitle">Carregando informações do aplicativo...</div>
+                                </div>
+                                <button class="btn btn-brand btn-sm" id="btnConnectMl" onclick="App.conectarMercadoLivre()" style="display: none;">Conectar Conta</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+    </div>
+
+    <!-- TOAST -->
+    <div class="toast-area" id="toastArea"></div>
+
+    <!-- MODAL: NOVA OFERTA -->
+    <div class="modal-backdrop" id="modalNovaOferta" style="display:none;" onclick="if(event.target===this) App.fecharModal()">
+        <div class="modal-box">
+            <div class="modal-title">📦 Nova Oferta Manual</div>
+            <div class="form-group">
+                <label class="form-label">Título do Produto *</label>
+                <input type="text" class="form-input" id="novoTitulo" placeholder="Ex: Creatina Monohidratada 250g">
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div class="form-group">
+                    <label class="form-label">Preço (R$) *</label>
+                    <input type="number" class="form-input" id="novoPreco" step="0.01" placeholder="59.90">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Preço Original (R$)</label>
+                    <input type="number" class="form-input" id="novoPrecoOriginal" step="0.01" placeholder="99.90">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Loja</label>
+                <select class="form-input form-select" id="novoLoja">
+                    <option value="Mercado Livre">Mercado Livre</option>
+                    <option value="Shopee">Shopee</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Link de Afiliado *</label>
+                <input type="text" class="form-input" id="novoLink" placeholder="https://meli.la/...">
+            </div>
+            <div class="form-group">
+                <label class="form-label">URL da Imagem</label>
+                <input type="text" class="form-input" id="novoImagem" placeholder="https://...jpg">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="App.fecharModal()">Cancelar</button>
+                <button class="btn btn-brand" onclick="App.salvarNovaOferta()">Salvar Oferta</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: LINK AFILIADO -->
+    <div class="modal-backdrop" id="modalLink" style="display:none;" onclick="if(event.target===this) App.fecharModalLink()">
+        <div class="modal-box">
+            <div class="modal-title">🔗 Link de Afiliado</div>
+            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;">
+                Cole o link <code style="background:var(--bg-card);padding:2px 6px;border-radius:4px;">meli.la</code> ou link curto da Shopee.
+            </p>
+            <div class="form-group">
+                <label class="form-label">Link de Afiliado</label>
+                <input type="text" class="form-input" id="inputLinkAfiliado" placeholder="https://meli.la/...">
+            </div>
+            <input type="hidden" id="linkOfertaId">
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="App.fecharModalLink()">Cancelar</button>
+                <button class="btn btn-success" onclick="App.salvarLinkAfiliado()">Salvar Link</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>
