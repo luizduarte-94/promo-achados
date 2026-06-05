@@ -2,6 +2,8 @@
 __pycache__/
 *.pyc
 *.db
+*.db.bak
+*.bak
 .vscode/
 .idea/
 *.zip
