@@ -103,11 +103,24 @@ class ShopeeScraper(BaseScraper):
         ofertas.sort(key=lambda o: o["desconto_pct"], reverse=True)
         return ofertas
 
+    @staticmethod
+    def _preco_float(valor) -> float:
+        """Converte preço da API (string decimal em reais ou número) para float."""
+        if valor in (None, ""):
+            return 0.0
+        try:
+            return float(str(valor).replace(",", "."))
+        except (TypeError, ValueError):
+            return 0.0
+
     def _parsear_item(self, node: dict) -> dict | None:
         """Converte item da API Shopee para formato padronizado."""
         try:
-            preco = float(node.get("priceMin", 0)) / 100000  # Shopee retorna em centavos * 1000
-            preco_original = float(node.get("priceOriginal", 0)) / 100000 if node.get("priceOriginal") else None
+            # NOTA: productOfferV2 retorna preços como string decimal em BRL (ex "29.90").
+            # Validar contra resposta real ao ativar a API (credenciais ainda pendentes).
+            preco = self._preco_float(node.get("priceMin"))
+            po = self._preco_float(node.get("priceOriginal"))
+            preco_original = po if po > 0 else None
 
             desconto = self._calcular_desconto(preco, preco_original)
 

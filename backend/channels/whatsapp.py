@@ -33,6 +33,15 @@ class WhatsAppChannel(BaseChannel):
                 ),
             }
 
+        if not config.WHATSAPP_TO:
+            return {
+                "sucesso": False,
+                "resposta": (
+                    "Defina WHATSAPP_TO (número destinatário E.164, ex: 5511999998888) "
+                    "no .env. PHONE_NUMBER_ID é o remetente, não o destino."
+                ),
+            }
+
         texto = self._montar_mensagem(oferta)
         url = f"{self.api_base}/{config.WHATSAPP_PHONE_NUMBER_ID}/messages"
 
@@ -44,7 +53,7 @@ class WhatsAppChannel(BaseChannel):
         # Envia como mensagem de texto formatada
         payload = {
             "messaging_product": "whatsapp",
-            "to": config.WHATSAPP_PHONE_NUMBER_ID,  # Número do destinatário (será configurável)
+            "to": config.WHATSAPP_TO,  # Destinatário E.164 (PHONE_NUMBER_ID é o remetente)
             "type": "text",
             "text": {"body": texto},
         }

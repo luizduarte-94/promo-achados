@@ -7,6 +7,11 @@ import os
 from google import genai
 from backend.config import config
 
+# Cache em memória: evita re-chamar o Gemini para a mesma oferta (mesmo título,
+# preço e cupom). Reduz custo e latência em postagens repetidas / em lote.
+_COPY_CACHE: dict[tuple, str] = {}
+_COPY_CACHE_MAX = 500
+
 def obter_client_ia():
     if config.GEMINI_API_KEY:
         # Tenta criar o client com a chave
@@ -31,11 +36,16 @@ def gerar_copy_oferta(oferta: dict) -> str:
     preco_orig = oferta.get("preco_original", "")
     desconto = oferta.get("desconto_pct", 0)
     loja = oferta.get("loja", "Loja")
-    
+
     # Extrai o cupom e forma de pagamento se existir
     dados_extra = oferta.get("dados_extra", {})
     cupom = dados_extra.get("cupom", "")
     pagamento = dados_extra.get("forma_pagamento", "")
+
+    # Cache: mesma oferta não re-chama o Gemini
+    cache_key = (titulo, preco, cupom)
+    if cache_key in _COPY_CACHE:
+        return _COPY_CACHE[cache_key]
     
     prompt = f"""
 Você é um copywriter profissional especialista em ofertas no Telegram.
@@ -107,7 +117,12 @@ Gere APENAS o texto da mensagem final.
             model='gemini-2.5-flash',
             contents=prompt,
         )
-        return response.text.strip()
+        texto = response.text.strip()
+        if texto:
+            if len(_COPY_CACHE) >= _COPY_CACHE_MAX:
+                _COPY_CACHE.clear()
+            _COPY_CACHE[cache_key] = texto
+        return texto
     except Exception as e:
         print(f"[IA Copywriter] Erro ao gerar texto: {e}")
         return ""

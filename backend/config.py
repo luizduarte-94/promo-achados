@@ -37,6 +37,8 @@ class Config:
     # --- WhatsApp Business ---
     WHATSAPP_ACCESS_TOKEN: str = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
     WHATSAPP_PHONE_NUMBER_ID: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+    # Número destinatário (E.164, ex: 5511999998888). PHONE_NUMBER_ID é o remetente.
+    WHATSAPP_TO: str = os.getenv("WHATSAPP_TO", "")
 
     # --- Instagram ---
     INSTAGRAM_ACCESS_TOKEN: str = os.getenv("INSTAGRAM_ACCESS_TOKEN", "")
