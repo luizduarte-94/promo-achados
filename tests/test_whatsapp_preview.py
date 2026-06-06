@@ -1,7 +1,16 @@
 # -*- coding: utf-8 -*-
 """Testes do preview de mensagem do WhatsApp (modo copiar manual)."""
 
+import pytest
+
 from backend.channels.whatsapp import WhatsAppChannel
+from backend.config import config
+
+
+@pytest.fixture(autouse=True)
+def _sem_ia(monkeypatch):
+    """Desliga a IA por padrão: testes offline e determinísticos (sem rede)."""
+    monkeypatch.setattr(config, "USAR_IA_COPYWRITER", False)
 
 OFERTA = {
     "titulo": "Creatina Monohidratada 300g",
@@ -52,10 +61,27 @@ def test_preview_sem_cupom_nao_quebra():
 
 
 def test_preview_linktree_so_quando_configurado(monkeypatch):
-    from backend import config as cfgmod
-    monkeypatch.setattr(cfgmod.config, "LINKTREE_URL", "")
+    monkeypatch.setattr(config, "LINKTREE_URL", "")
     assert "Economize também" not in WhatsAppChannel().preview(OFERTA)
-    monkeypatch.setattr(cfgmod.config, "LINKTREE_URL", "https://linktr.ee/teste")
+    monkeypatch.setattr(config, "LINKTREE_URL", "https://linktr.ee/teste")
     t = WhatsAppChannel().preview(OFERTA)
     assert "Economize também em outras categorias:" in t
     assert "https://linktr.ee/teste" in t
+
+
+def test_preview_insere_frase_ia_quando_ligada(monkeypatch):
+    import backend.copywriter as cw
+    monkeypatch.setattr(config, "USAR_IA_COPYWRITER", True)
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(cw, "gerar_frase_persuasiva", lambda o: "Energia e foco no seu treino.")
+    t = WhatsAppChannel().preview(OFERTA)
+    assert "_Energia e foco no seu treino._" in t
+
+
+def test_preview_sem_frase_ia_nao_quebra(monkeypatch):
+    import backend.copywriter as cw
+    monkeypatch.setattr(config, "USAR_IA_COPYWRITER", True)
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(cw, "gerar_frase_persuasiva", lambda o: "")  # IA falhou/vazia
+    t = WhatsAppChannel().preview(OFERTA)
+    assert "Creatina Monohidratada 300g" in t  # segue funcionando sem a frase

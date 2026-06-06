@@ -12,6 +12,46 @@ from backend.config import config
 _COPY_CACHE: dict[tuple, str] = {}
 _COPY_CACHE_MAX = 500
 
+# Cache das frases persuasivas curtas (WhatsApp), por título.
+_FRASE_CACHE: dict[str, str] = {}
+
+
+def gerar_frase_persuasiva(oferta: dict) -> str:
+    """Gera UMA frase de venda curta (<= 15 palavras) para inserir na mensagem.
+
+    Texto puro: sem HTML, sem markdown, sem links, sem preço, sem emoji.
+    Retorna "" se a IA estiver desligada ou falhar (o chamador segue sem a frase).
+    """
+    titulo = (oferta.get("titulo") or "").strip()
+    if not titulo:
+        return ""
+
+    if titulo in _FRASE_CACHE:
+        return _FRASE_CACHE[titulo]
+
+    client = obter_client_ia()
+    if not client:
+        return ""
+
+    prompt = (
+        "Gere UMA frase de venda curta e persuasiva (máximo 15 palavras) para o "
+        f"produto abaixo, em português do Brasil.\n\nProduto: {titulo}\n\n"
+        "Regras: apenas a frase, sem aspas, sem links, sem preço, sem hashtag, "
+        "sem emoji e sem quebra de linha."
+    )
+    try:
+        resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        frase = (resp.text or "").strip().strip('"').replace("\n", " ")
+        if frase:
+            if len(_FRASE_CACHE) >= _COPY_CACHE_MAX:
+                _FRASE_CACHE.clear()
+            _FRASE_CACHE[titulo] = frase
+        return frase
+    except Exception as e:
+        print(f"[IA Copywriter] Erro ao gerar frase: {e}")
+        return ""
+
+
 def obter_client_ia():
     if config.GEMINI_API_KEY:
         # Tenta criar o client com a chave

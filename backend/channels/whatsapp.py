@@ -90,6 +90,14 @@ class WhatsAppChannel(BaseChannel):
         linhas.append(f"*{oferta['titulo']}*")
         linhas.append("")
 
+        # Frase persuasiva gerada por IA (opcional, mantém o formato do grupo)
+        if config.USAR_IA_COPYWRITER and config.GEMINI_API_KEY:
+            from backend.copywriter import gerar_frase_persuasiva
+            frase = gerar_frase_persuasiva(oferta)
+            if frase:
+                linhas.append(f"_{frase}_")
+                linhas.append("")
+
         preco_fmt = self.formatar_preco(oferta["preco"])
         if oferta.get("preco_original") and oferta["preco_original"] > oferta["preco"]:
             preco_orig_fmt = self.formatar_preco(oferta["preco_original"])
