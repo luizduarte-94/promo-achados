@@ -40,7 +40,8 @@ def _get_conn() -> sqlite3.Connection:
 def init_db():
     """Cria as tabelas se não existirem."""
     conn = _get_conn()
-    conn.executescript("""
+    conn.executescript(
+        """
         CREATE TABLE IF NOT EXISTS ofertas (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             titulo          TEXT NOT NULL,
@@ -125,7 +126,8 @@ def init_db():
             criado_em       TEXT DEFAULT (datetime('now', 'localtime')),
             FOREIGN KEY (departamento_id) REFERENCES departamentos(id)
         );
-    """)
+    """
+    )
 
     # Migração: adicionar coluna departamento_id se não existir
     try:
@@ -143,14 +145,46 @@ def init_db():
     count = conn.execute("SELECT COUNT(*) FROM departamentos").fetchone()[0]
     if count == 0:
         departamentos_padrao = [
-            ("Fitness & Academia", "💪", "creatina,whey,whey protein,proteina,albumina,bcaa,glutamina,pre treino,barra proteica,academia,suplemento,maltodextrina,amendoim,pasta de amendoim,dr peanut"),
-            ("Bebê & Fraldas", "🍼", "fralda,fraldas,pampers,huggies,lenco umedecido,pomada assadura,bebe,mamadeira,infantil"),
-            ("Saúde & Beleza", "💄", "protetor solar,shampoo,condicionador,perfume,maquiagem,skincare,hidratante,creme,cabelo,desodorante,sabonete,serum"),
-            ("Eletrônicos", "📱", "notebook,fone,fone de ouvido,fone bluetooth,buds,airpods,headphone,headset,smart tv,tv,qled,oled,tablet,smartwatch,celular,smartphone,monitor,ssd,mouse,teclado,carregador,powerbank,caixa de som"),
-            ("Casa & Limpeza", "🏠", "detergente,amaciante,papel higienico,aspirador,panela,limpeza,organizador,vassoura,esponja"),
-            ("Games", "🎮", "playstation,xbox,nintendo,controle,jogo,headset gamer,cadeira gamer,console,gamer"),
-            ("Moda & Acessórios", "👗", "tenis,roupa,camisa,camiseta,relogio,bolsa,oculos,jaqueta,calca,vestido"),
-            ("Alimentos & Bebidas", "🍕", "cafe,chocolate,biscoito,cerveja,vinho,leite,cereal,tahine,manteiga,azeite,achocolatado"),
+            (
+                "Fitness & Academia",
+                "💪",
+                "creatina,whey,whey protein,proteina,albumina,bcaa,glutamina,pre treino,barra proteica,academia,suplemento,maltodextrina,amendoim,pasta de amendoim,dr peanut",
+            ),
+            (
+                "Bebê & Fraldas",
+                "🍼",
+                "fralda,fraldas,pampers,huggies,lenco umedecido,pomada assadura,bebe,mamadeira,infantil",
+            ),
+            (
+                "Saúde & Beleza",
+                "💄",
+                "Hidratantes,oleo,oleo corporal,protetor solar,shampoo,condicionador,perfume,maquiagem,skincare,hidratante,creme,cabelo,desodorante,sabonete,serum,hidratantes",
+            ),
+            (
+                "Eletrônicos",
+                "📱",
+                "notebook,fone,fone de ouvido,fone bluetooth,buds,airpods,headphone,headset,smart tv,tv,qled,oled,tablet,smartwatch,celular,smartphone,monitor,ssd,mouse,teclado,carregador,powerbank,caixa de som",
+            ),
+            (
+                "Casa & Limpeza",
+                "🏠",
+                "detergente,amaciante,papel higienico,aspirador,panela,limpeza,organizador,vassoura,esponja",
+            ),
+            (
+                "Games",
+                "🎮",
+                "playstation,xbox,nintendo,controle,jogo,headset gamer,cadeira gamer,console,gamer",
+            ),
+            (
+                "Moda & Acessórios",
+                "👗",
+                "tenis,roupa,camisa,camiseta,relogio,bolsa,oculos,jaqueta,calca,vestido",
+            ),
+            (
+                "Alimentos & Bebidas",
+                "🍕",
+                "cafe,chocolate,biscoito,cerveja,vinho,leite,cereal,tahine,manteiga,azeite,achocolatado",
+            ),
         ]
         conn.executemany(
             "INSERT INTO departamentos (nome, emoji, palavras_chave) VALUES (?, ?, ?)",
@@ -165,6 +199,7 @@ def init_db():
 # OFERTAS
 # =============================================
 
+
 def criar_oferta(dados: dict) -> int:
     """Insere uma oferta e retorna o ID."""
     # Classificação automática de departamento se não informado
@@ -172,31 +207,34 @@ def criar_oferta(dados: dict) -> int:
         dados = {**dados, "departamento_id": classificar_departamento(dados["titulo"])}
 
     conn = _get_conn()
-    cur = conn.execute("""
+    cur = conn.execute(
+        """
         INSERT INTO ofertas (titulo, preco, preco_original, desconto_pct, loja,
                              link_original, link_afiliado, imagem_url, categoria,
                              vendedor, reputacao, frete_gratis, status, fonte, dados_extra,
                              departamento_id, produto_id)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        dados.get("titulo", ""),
-        dados.get("preco", 0),
-        dados.get("preco_original"),
-        dados.get("desconto_pct", 0),
-        dados.get("loja", "Mercado Livre"),
-        dados.get("link_original"),
-        dados.get("link_afiliado"),
-        dados.get("imagem_url"),
-        dados.get("categoria"),
-        dados.get("vendedor"),
-        dados.get("reputacao"),
-        dados.get("frete_gratis", 0),
-        dados.get("status", "pendente"),
-        dados.get("fonte", "manual"),
-        json.dumps(dados.get("dados_extra")) if dados.get("dados_extra") else None,
-        dados.get("departamento_id"),
-        extrair_produto_id(dados.get("link_original")),
-    ))
+    """,
+        (
+            dados.get("titulo", ""),
+            dados.get("preco", 0),
+            dados.get("preco_original"),
+            dados.get("desconto_pct", 0),
+            dados.get("loja", "Mercado Livre"),
+            dados.get("link_original"),
+            dados.get("link_afiliado"),
+            dados.get("imagem_url"),
+            dados.get("categoria"),
+            dados.get("vendedor"),
+            dados.get("reputacao"),
+            dados.get("frete_gratis", 0),
+            dados.get("status", "pendente"),
+            dados.get("fonte", "manual"),
+            json.dumps(dados.get("dados_extra")) if dados.get("dados_extra") else None,
+            dados.get("departamento_id"),
+            extrair_produto_id(dados.get("link_original")),
+        ),
+    )
     conn.commit()
     oferta_id = cur.lastrowid
     conn.close()
@@ -215,7 +253,9 @@ def _parse_row(row: sqlite3.Row) -> dict:
     return d
 
 
-def listar_ofertas(status: str = None, loja: str = None, limite: int = 100) -> list[dict]:
+def listar_ofertas(
+    status: str = None, loja: str = None, limite: int = 100
+) -> list[dict]:
     """Lista ofertas com filtros opcionais."""
     conn = _get_conn()
     query = """
@@ -244,12 +284,15 @@ def listar_ofertas(status: str = None, loja: str = None, limite: int = 100) -> l
 def obter_oferta(oferta_id: int) -> dict | None:
     """Retorna uma oferta pelo ID."""
     conn = _get_conn()
-    row = conn.execute("""
+    row = conn.execute(
+        """
         SELECT o.*, d.nome AS departamento_nome, d.emoji AS departamento_emoji
         FROM ofertas o
         LEFT JOIN departamentos d ON o.departamento_id = d.id
         WHERE o.id = ?
-    """, (oferta_id,)).fetchone()
+    """,
+        (oferta_id,),
+    ).fetchone()
     conn.close()
     return _parse_row(row) if row else None
 
@@ -259,9 +302,22 @@ def atualizar_oferta(oferta_id: int, dados: dict) -> bool:
     conn = _get_conn()
     campos = []
     valores = []
-    for chave in ("titulo", "preco", "preco_original", "desconto_pct", "loja",
-                   "link_original", "link_afiliado", "imagem_url", "categoria",
-                   "vendedor", "reputacao", "frete_gratis", "status", "departamento_id"):
+    for chave in (
+        "titulo",
+        "preco",
+        "preco_original",
+        "desconto_pct",
+        "loja",
+        "link_original",
+        "link_afiliado",
+        "imagem_url",
+        "categoria",
+        "vendedor",
+        "reputacao",
+        "frete_gratis",
+        "status",
+        "departamento_id",
+    ):
         if chave in dados:
             campos.append(f"{chave} = ?")
             valores.append(dados[chave])
@@ -312,18 +368,22 @@ def oferta_existe(link_original: str) -> bool:
 # POSTAGENS
 # =============================================
 
+
 def registrar_postagem(oferta_id: int, canal: str, sucesso: bool, resposta: str = None):
     """Registra uma postagem feita."""
     conn = _get_conn()
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO postagens (oferta_id, canal, sucesso, resposta)
         VALUES (?, ?, ?, ?)
-    """, (oferta_id, canal, int(sucesso), resposta))
+    """,
+        (oferta_id, canal, int(sucesso), resposta),
+    )
 
     if sucesso:
         conn.execute(
             "UPDATE ofertas SET status = 'postada', atualizado_em = datetime('now', 'localtime') WHERE id = ?",
-            (oferta_id,)
+            (oferta_id,),
         )
 
     conn.commit()
@@ -333,13 +393,16 @@ def registrar_postagem(oferta_id: int, canal: str, sucesso: bool, resposta: str 
 def listar_postagens(limite: int = 50) -> list[dict]:
     """Lista postagens recentes com dados da oferta."""
     conn = _get_conn()
-    rows = conn.execute("""
+    rows = conn.execute(
+        """
         SELECT p.*, o.titulo, o.loja, o.preco
         FROM postagens p
         JOIN ofertas o ON p.oferta_id = o.id
         ORDER BY p.postado_em DESC
         LIMIT ?
-    """, (limite,)).fetchall()
+    """,
+        (limite,),
+    ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -348,13 +411,18 @@ def listar_postagens(limite: int = 50) -> list[dict]:
 # ESTATÍSTICAS
 # =============================================
 
+
 def obter_stats() -> dict:
     """Estatísticas para o dashboard."""
     conn = _get_conn()
 
     total = conn.execute("SELECT COUNT(*) FROM ofertas").fetchone()[0]
-    pendentes = conn.execute("SELECT COUNT(*) FROM ofertas WHERE status = 'pendente'").fetchone()[0]
-    postadas = conn.execute("SELECT COUNT(*) FROM ofertas WHERE status = 'postada'").fetchone()[0]
+    pendentes = conn.execute(
+        "SELECT COUNT(*) FROM ofertas WHERE status = 'pendente'"
+    ).fetchone()[0]
+    postadas = conn.execute(
+        "SELECT COUNT(*) FROM ofertas WHERE status = 'postada'"
+    ).fetchone()[0]
 
     hoje = datetime.now().strftime("%Y-%m-%d")
     postadas_hoje = conn.execute(
@@ -384,13 +452,17 @@ def obter_stats() -> dict:
 # HISTÓRICO DE BUSCAS
 # =============================================
 
+
 def registrar_busca(fonte: str, palavra_chave: str, qtd: int):
     """Registra uma busca realizada."""
     conn = _get_conn()
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO historico_buscas (fonte, palavra_chave, qtd_resultados)
         VALUES (?, ?, ?)
-    """, (fonte, palavra_chave, qtd))
+    """,
+        (fonte, palavra_chave, qtd),
+    )
     conn.commit()
     conn.close()
 
@@ -399,10 +471,13 @@ def registrar_busca(fonte: str, palavra_chave: str, qtd: int):
 # CONFIGURAÇÕES ADICIONAIS
 # =============================================
 
+
 def obter_configuracao(chave: str) -> str | None:
     """Retorna o valor de uma chave na tabela configuracoes."""
     conn = _get_conn()
-    row = conn.execute("SELECT valor FROM configuracoes WHERE chave = ?", (chave,)).fetchone()
+    row = conn.execute(
+        "SELECT valor FROM configuracoes WHERE chave = ?", (chave,)
+    ).fetchone()
     conn.close()
     return row["valor"] if row else None
 
@@ -410,11 +485,14 @@ def obter_configuracao(chave: str) -> str | None:
 def definir_configuracao(chave: str, valor: str):
     """Define ou atualiza o valor de uma chave na tabela configuracoes."""
     conn = _get_conn()
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO configuracoes (chave, valor)
         VALUES (?, ?)
         ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor
-    """, (chave, valor))
+    """,
+        (chave, valor),
+    )
     conn.commit()
     conn.close()
 
@@ -422,6 +500,7 @@ def definir_configuracao(chave: str, valor: str):
 # =============================================
 # DEPARTAMENTOS
 # =============================================
+
 
 def listar_departamentos(apenas_ativos: bool = True) -> list[dict]:
     """Lista todos os departamentos."""
@@ -491,7 +570,11 @@ def classificar_departamento(titulo: str) -> int | None:
     melhor_score = 0
     melhor_dep_id = None
     for dep in listar_departamentos():
-        keywords = [k.strip().lower() for k in dep.get("palavras_chave", "").split(",") if k.strip()]
+        keywords = [
+            k.strip().lower()
+            for k in dep.get("palavras_chave", "").split(",")
+            if k.strip()
+        ]
         score = 0
         for kw in keywords:
             palavras_kw = kw.split()
@@ -508,22 +591,32 @@ def classificar_departamento(titulo: str) -> int | None:
 # HISTÓRICO DE PREÇOS
 # =============================================
 
-def registrar_preco(titulo: str, preco: float, link_original: str = None,
-                    loja: str = None, preco_original: float = None,
-                    departamento_id: int = None):
+
+def registrar_preco(
+    titulo: str,
+    preco: float,
+    link_original: str = None,
+    loja: str = None,
+    preco_original: float = None,
+    departamento_id: int = None,
+):
     """Registra um snapshot de preço no histórico."""
     conn = _get_conn()
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO historico_precos (titulo, preco, link_original, loja,
                                       preco_original, departamento_id)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, (titulo, preco, link_original, loja, preco_original, departamento_id))
+    """,
+        (titulo, preco, link_original, loja, preco_original, departamento_id),
+    )
     conn.commit()
     conn.close()
 
 
-def obter_historico_precos(link_original: str = None, titulo: str = None,
-                           limite: int = 180) -> list[dict]:
+def obter_historico_precos(
+    link_original: str = None, titulo: str = None, limite: int = 180
+) -> list[dict]:
     """Retorna histórico de preços de um produto (por link ou título parcial)."""
     conn = _get_conn()
     if link_original:
@@ -560,6 +653,7 @@ def obter_menor_preco(link_original: str) -> float | None:
 # PRODUTOS RECORRENTES
 # =============================================
 
+
 def listar_produtos_recorrentes(apenas_ativos: bool = True) -> list[dict]:
     """Lista produtos recorrentes (best sellers monitorados)."""
     conn = _get_conn()
@@ -579,18 +673,21 @@ def listar_produtos_recorrentes(apenas_ativos: bool = True) -> list[dict]:
 def criar_produto_recorrente(dados: dict) -> int:
     """Cadastra um produto recorrente para monitoramento."""
     conn = _get_conn()
-    cur = conn.execute("""
+    cur = conn.execute(
+        """
         INSERT INTO produtos_recorrentes (titulo, link_original, loja, preco_alvo,
                                            preco_atual, departamento_id)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        dados.get("titulo", ""),
-        dados.get("link_original"),
-        dados.get("loja", "Mercado Livre"),
-        dados.get("preco_alvo"),
-        dados.get("preco_atual"),
-        dados.get("departamento_id"),
-    ))
+    """,
+        (
+            dados.get("titulo", ""),
+            dados.get("link_original"),
+            dados.get("loja", "Mercado Livre"),
+            dados.get("preco_alvo"),
+            dados.get("preco_atual"),
+            dados.get("departamento_id"),
+        ),
+    )
     conn.commit()
     prod_id = cur.lastrowid
     conn.close()
@@ -602,8 +699,17 @@ def atualizar_produto_recorrente(prod_id: int, dados: dict) -> bool:
     conn = _get_conn()
     campos = []
     valores = []
-    for chave in ("titulo", "link_original", "loja", "preco_alvo", "preco_atual",
-                   "preco_minimo", "departamento_id", "ativo", "ultimo_check"):
+    for chave in (
+        "titulo",
+        "link_original",
+        "loja",
+        "preco_alvo",
+        "preco_atual",
+        "preco_minimo",
+        "departamento_id",
+        "ativo",
+        "ultimo_check",
+    ):
         if chave in dados:
             campos.append(f"{chave} = ?")
             valores.append(dados[chave])
@@ -611,7 +717,9 @@ def atualizar_produto_recorrente(prod_id: int, dados: dict) -> bool:
         conn.close()
         return False
     valores.append(prod_id)
-    conn.execute(f"UPDATE produtos_recorrentes SET {', '.join(campos)} WHERE id = ?", valores)
+    conn.execute(
+        f"UPDATE produtos_recorrentes SET {', '.join(campos)} WHERE id = ?", valores
+    )
     conn.commit()
     conn.close()
     return True

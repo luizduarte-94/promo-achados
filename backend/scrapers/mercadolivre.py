@@ -61,6 +61,26 @@ class MercadoLivreScraper(BaseScraper):
 
         return ofertas
 
+    @staticmethod
+    def _extrair_money(el) -> float | None:
+        """Extrai o valor de um bloco .andes-money-amount (fraction + cents).
+
+        Combina parte inteira e centavos e remove o separador de milhar
+        (ex.: '1.299' + '90' -> 1299.90). Retorna None se não houver preço.
+        """
+        if not el:
+            return None
+        frac = el.select_one('.andes-money-amount__fraction')
+        if not frac:
+            return None
+        inteiro = frac.text.strip().replace('.', '')  # remove separador de milhar
+        cents_el = el.select_one('.andes-money-amount__cents')
+        cents = cents_el.text.strip() if cents_el else '00'
+        try:
+            return float(f"{inteiro}.{cents or '00'}")
+        except ValueError:
+            return None
+
     def _parsear_item(self, item: bs4.element.Tag) -> dict | None:
         """Extrai as informações de um elemento HTML do produto."""
         try:
@@ -80,29 +100,13 @@ class MercadoLivreScraper(BaseScraper):
             if imagem and "D_Q_NP_" in imagem:
                 imagem = imagem.replace("D_Q_NP_", "D_NQ_NP_").replace("-V.webp", "-O.webp").replace("-E.webp", "-O.webp")
 
-            # 3. Preço e Preço Original
-            # Original
-            original_el = item.select_one('s.andes-money-amount--previous .andes-money-amount__fraction')
-            preco_original = None
-            if original_el:
-                po_str = original_el.text.replace('.', '').replace(',', '.')
-                preco_original = float(po_str) if po_str else None
+            # 3. Preço atual e original (fraction + cents, escopado ao bloco certo)
+            cur_el = (item.select_one('.poly-price__current .andes-money-amount')
+                      or item.select_one('.ui-search-price--size-medium .andes-money-amount'))
+            preco = self._extrair_money(cur_el) or 0.0
 
-            # Atual
-            current_el = item.select_one('.poly-price__current .andes-money-amount__fraction') or item.select_one('.ui-search-price--size-medium .andes-money-amount__fraction')
-            preco = 0.0
-            if current_el:
-                p_str = current_el.text.replace('.', '').replace(',', '.')
-                preco = float(p_str) if p_str else 0.0
-                
-            # Fallback se não encontrou o elemento de preço atual específico
-            if preco == 0.0:
-                todas_fractions = item.select('.andes-money-amount__fraction')
-                if todas_fractions:
-                    # Se houver mais de um, geralmente o segundo é o atual quando tem desconto
-                    idx = 1 if preco_original and len(todas_fractions) > 1 else 0
-                    p_str = todas_fractions[idx].text.replace('.', '').replace(',', '.')
-                    preco = float(p_str) if p_str else 0.0
+            prev_el = item.select_one('s.andes-money-amount--previous')
+            preco_original = self._extrair_money(prev_el)
 
             if preco <= 0:
                 return None
