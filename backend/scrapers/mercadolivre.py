@@ -2,10 +2,13 @@
 """
 Scraper do Mercado Livre — via BeautifulSoup (Plano B).
 
-Implementa o "Plano B" de scraping: usar scraping de HTML via BeautifulSoup
-simulando o Googlebot para ignorar a restrição de token (Erro 403) da API oficial.
+Implementa o "Plano B": scraping do HTML SSR do ML (entregue a crawlers tipo
+Googlebot) com proteção anti-bloqueio — ritmo com jitter entre requisições e
+cooldown automático ao detectar bloqueio (HTTP 403/429).
 """
 
+import random
+import threading
 import time
 import requests
 import bs4
@@ -13,18 +16,75 @@ from backend.scrapers.base import BaseScraper
 from backend.config import config
 from backend import database as db
 
+# --- Rate limiting global (compartilhado entre agendador e API) ---
+_REQUEST_LOCK = threading.Lock()
+_ultimo_request = 0.0       # timestamp da última requisição
+_cooldown_ate = 0.0         # se > agora, está em cooldown anti-bloqueio
+_INTERVALO_MIN = 4.0        # segundos mínimos entre requisições
+_INTERVALO_MAX = 8.0        # teto do jitter
+_COOLDOWN_BLOQUEIO = 900    # 15 min de pausa ao detectar bloqueio
+
+
 class MercadoLivreScraper(BaseScraper):
     """Busca ofertas no Mercado Livre via Scraping HTML (Plano B)."""
 
     nome = "Mercado Livre"
 
+    # IMPORTANTE: o ML só entrega o HTML renderizado (SSR, com os itens da busca)
+    # para crawlers tipo Googlebot. Com User-Agent de navegador comum a página vem
+    # sem os resultados (depende de JS) e o scraping retorna 0. Por isso o UA de
+    # Googlebot é necessário para o "Plano B" funcionar — a proteção anti-bloqueio
+    # vem do ritmo/cooldown em _fetch, não de esconder o UA.
+    # Accept-Encoding sem 'br': o requests não decodifica brotli sem a lib extra.
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate",
     }
 
     def __init__(self):
         pass
+
+    def _fetch(self, url: str):
+        """Requisição protegida: ritmo com jitter + cooldown em bloqueio.
+
+        Serializa as requisições (lock global) para nunca disparar em rajada,
+        respeita um intervalo aleatório entre chamadas e, ao detectar bloqueio
+        (HTTP 403/429), entra em cooldown e devolve None.
+        """
+        global _ultimo_request, _cooldown_ate
+        with _REQUEST_LOCK:
+            agora = time.time()
+            if agora < _cooldown_ate:
+                restante = int(_cooldown_ate - agora)
+                print(f"[ML] Em cooldown anti-bloqueio ({restante}s restantes). Requisição pulada.")
+                return None
+
+            espera = (_ultimo_request + random.uniform(_INTERVALO_MIN, _INTERVALO_MAX)) - agora
+            if espera > 0:
+                time.sleep(espera)
+
+            try:
+                resp = requests.get(url, headers=self.HEADERS, timeout=15)
+            except requests.RequestException as e:
+                _ultimo_request = time.time()
+                print(f"[ML] Erro de rede: {e}")
+                return None
+
+            _ultimo_request = time.time()
+
+            if resp.status_code in (403, 429):
+                _cooldown_ate = time.time() + _COOLDOWN_BLOQUEIO
+                print(
+                    f"[ML] Possível bloqueio (HTTP {resp.status_code}). "
+                    f"Pausando scraping por {_COOLDOWN_BLOQUEIO // 60} min."
+                )
+                return None
+            if resp.status_code != 200:
+                print(f"[ML] Resposta inesperada (HTTP {resp.status_code}).")
+                return None
+            return resp
 
     def buscar(self, palavra_chave: str, limite: int = 20, filtrar_qualidade: bool = True) -> list[dict]:
         """
@@ -37,11 +97,8 @@ class MercadoLivreScraper(BaseScraper):
         """
         url = f"https://lista.mercadolivre.com.br/{palavra_chave.replace(' ', '-')}"
 
-        try:
-            resp = requests.get(url, headers=self.HEADERS, timeout=15)
-            resp.raise_for_status()
-        except requests.RequestException as e:
-            print(f"[ML Plano B] Erro na requisição HTML por '{palavra_chave}': {e}")
+        resp = self._fetch(url)
+        if resp is None:
             return []
 
         soup = bs4.BeautifulSoup(resp.text, 'html.parser')
@@ -172,15 +229,13 @@ class MercadoLivreScraper(BaseScraper):
         return True
 
     def buscar_todas_palavras(self) -> list[dict]:
-        """Busca para todas as palavras-chave configuradas."""
+        """Busca para todas as palavras-chave configuradas.
+
+        O ritmo entre requisições é controlado por _fetch (jitter global),
+        então não há sleep extra aqui.
+        """
         todas = []
         for kw in config.BUSCA_PALAVRAS_CHAVE:
             print(f"[ML Plano B] Buscando: {kw}...")
-            resultados = self.buscar(kw)
-            todas.extend(resultados)
-            
-            # Rate limiting humanizado: Pausa aleatória entre 3 e 7 segundos
-            import random
-            espera = random.uniform(3.0, 7.0)
-            time.sleep(espera)
+            todas.extend(self.buscar(kw))
         return todas
