@@ -159,7 +159,8 @@ class MercadoLivreScraper(BaseScraper):
                 },
             }
         except Exception as e:
-            # Silencia erros individuais para não poluir log, apenas ignora o item
+            # Ignora o item com erro, mas registra para diagnóstico (sem derrubar a busca).
+            print(f"[ML Plano B] Falha ao parsear item: {type(e).__name__}: {e}")
             return None
 
     def _filtro_qualidade(self, oferta: dict) -> bool:

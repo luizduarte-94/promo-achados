@@ -554,8 +554,8 @@ def atualizar_departamento(dep_id: int, dados: dict) -> bool:
     return True
 
 
-def classificar_departamento(titulo: str) -> int | None:
-    """Classifica automaticamente uma oferta em um departamento baseado no título.
+def melhor_departamento(titulo: str, deps: list[dict]) -> int | None:
+    """Escolhe o melhor departamento para um título (função pura, sem I/O).
 
     Casa por PALAVRAS (não substring contíguo): uma keyword de várias palavras
     (ex "fone bluetooth") casa quando todas as suas palavras aparecem no título,
@@ -569,7 +569,7 @@ def classificar_departamento(titulo: str) -> int | None:
 
     melhor_score = 0
     melhor_dep_id = None
-    for dep in listar_departamentos():
+    for dep in deps:
         keywords = [
             k.strip().lower()
             for k in dep.get("palavras_chave", "").split(",")
@@ -585,6 +585,11 @@ def classificar_departamento(titulo: str) -> int | None:
             melhor_dep_id = dep["id"]
 
     return melhor_dep_id
+
+
+def classificar_departamento(titulo: str) -> int | None:
+    """Classifica uma oferta no melhor departamento com base no título."""
+    return melhor_departamento(titulo, listar_departamentos())
 
 
 # =============================================
