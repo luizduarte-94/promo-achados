@@ -72,49 +72,58 @@ class WhatsAppChannel(BaseChannel):
         return self._montar_mensagem(oferta)
 
     def _montar_mensagem(self, oferta: dict) -> str:
-        """Monta mensagem para WhatsApp.
+        """Monta a mensagem no formato dos grupos de promoção do WhatsApp.
 
-        Usa a formatação do WhatsApp: *negrito* e ~tachado~. Sem HTML.
+        Usa o markdown do WhatsApp: *negrito*, _itálico_ e ~tachado~. Sem HTML.
         """
         linhas = []
 
         desconto = oferta.get("desconto_pct", 0)
         if desconto >= 40:
-            linhas.append("🔥🔥🔥 *OFERTA IMPERDÍVEL* 🔥🔥🔥")
+            linhas.append("🔥 *OFERTA IMPERDÍVEL* 🔥")
         elif desconto >= 25:
             linhas.append("‼️ *PREÇO BAIXOU* ‼️")
         else:
-            linhas.append("💰 *ACHADO DO DIA* 💰")
+            linhas.append("‼️ *ESGOTA RÁPIDO* ‼️")
         linhas.append("")
 
-        linhas.append(f"📦 {oferta['titulo']}")
+        linhas.append(f"*{oferta['titulo']}*")
         linhas.append("")
 
         preco_fmt = self.formatar_preco(oferta["preco"])
         if oferta.get("preco_original") and oferta["preco_original"] > oferta["preco"]:
             preco_orig_fmt = self.formatar_preco(oferta["preco_original"])
             linhas.append(f"De: ~{preco_orig_fmt}~")
-            linhas.append(f"*Por: {preco_fmt}* 🏷️")
+            linhas.append(f"*Por: {preco_fmt} à vista*")
             linhas.append(f"📉 *{desconto:.0f}% OFF*")
         else:
-            linhas.append(f"*Por: {preco_fmt}*")
+            linhas.append(f"*Por: {preco_fmt} à vista*")
         linhas.append("")
-
-        if oferta.get("frete_gratis"):
-            linhas.append("🚚 Frete Grátis!")
-            linhas.append("")
 
         cupom = (oferta.get("dados_extra") or {}).get("cupom", "")
         if cupom:
-            linhas.append(f"🎟️ *Cupom:* {cupom}")
+            linhas.append(f"*Utilize o cupom: {cupom}*")
+            linhas.append("_(o desconto entra na tela de pagamento)_")
+            linhas.append("")
+
+        if oferta.get("frete_gratis"):
+            linhas.append("_Frete grátis para várias regiões, consulte seu CEP_")
             linhas.append("")
 
         link = oferta.get("link_afiliado") or oferta.get("link_original", "")
-        linhas.append(f"🏪 {oferta.get('loja', 'Loja')}:")
+        linhas.append(f"*{oferta.get('loja', 'Loja')}:*")
         if link:
-            linhas.append(f"🔗 {link}")
+            linhas.append(f"Compre em: {link}")
         linhas.append("")
-        linhas.append("⏰ Promoção por tempo limitado!")
-        linhas.append("🔗 Contém links de afiliado")
+
+        linhas.append("Promoção por tempo limitado")
+        linhas.append("")
+        linhas.append("⚠️ O link ou foto não apareceu?")
+        linhas.append("Adicione esse contato na sua agenda.")
+
+        if config.LINKTREE_URL:
+            linhas.append("")
+            linhas.append("Economize também em outras categorias:")
+            linhas.append(config.LINKTREE_URL)
 
         return "\n".join(linhas)

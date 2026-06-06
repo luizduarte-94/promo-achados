@@ -44,6 +44,10 @@ class Config:
     INSTAGRAM_ACCESS_TOKEN: str = os.getenv("INSTAGRAM_ACCESS_TOKEN", "")
     INSTAGRAM_USER_ID: str = os.getenv("INSTAGRAM_USER_ID", "")
 
+    # --- Divulgação ---
+    # Linktree/landing com todos os teus links (aparece no rodapé das mensagens).
+    LINKTREE_URL: str = os.getenv("LINKTREE_URL", "")
+
     # --- Inteligência Artificial ---
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     USAR_IA_COPYWRITER: bool = os.getenv("USAR_IA_COPYWRITER", "True").lower() == "true"
