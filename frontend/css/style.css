@@ -337,10 +337,13 @@ body {
 
 .kpi-row {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(6, 1fr);
     gap: 14px;
     margin-bottom: 28px;
 }
+
+@media (max-width: 1300px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 720px)  { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
 
 .kpi-card {
     background: var(--bg-card);
@@ -380,32 +383,36 @@ body {
 }
 
 .kpi-icon-wrap {
-    width: 36px;
-    height: 36px;
-    border-radius: var(--radius-sm);
+    width: 38px;
+    height: 38px;
+    border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 16px;
+    font-size: 17px;
+    border: 1px solid transparent;
 }
 
-.kpi-icon-wrap.orange { background: rgba(255,107,53,0.12); }
-.kpi-icon-wrap.green { background: var(--success-bg); }
-.kpi-icon-wrap.amber { background: var(--warning-bg); }
-.kpi-icon-wrap.blue { background: var(--info-bg); }
+.kpi-icon-wrap.orange { background: rgba(255,107,53,0.14); border-color: rgba(255,107,53,0.28); }
+.kpi-icon-wrap.green  { background: var(--success-bg); border-color: rgba(52,211,153,0.28); }
+.kpi-icon-wrap.amber  { background: var(--warning-bg); border-color: rgba(251,191,36,0.28); }
+.kpi-icon-wrap.blue   { background: var(--info-bg); border-color: rgba(96,165,250,0.28); }
 
 .kpi-value {
-    font-size: 28px;
+    font-size: 30px;
     font-weight: 800;
     letter-spacing: -1px;
     line-height: 1;
+    font-variant-numeric: tabular-nums;
 }
 
 .kpi-label {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-tertiary);
-    font-weight: 500;
-    margin-top: 6px;
+    font-weight: 600;
+    margin-top: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 /* =============================================
@@ -433,7 +440,17 @@ body {
     font-weight: 700;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    letter-spacing: -0.2px;
+}
+
+.panel-title::before {
+    content: '';
+    width: 3px;
+    height: 16px;
+    border-radius: var(--radius-full);
+    background: var(--brand-gradient);
+    flex-shrink: 0;
 }
 
 .panel-body { padding: 20px; }
@@ -1070,3 +1087,34 @@ body {
     .kpi-value { font-size: 22px; }
     .offer-footer { flex-direction: column; }
 }
+
+/* =============================================
+   POLISH — acessibilidade & micro-interações
+   ============================================= */
+
+/* Foco visível por teclado (mantém navegação clara sem poluir o mouse) */
+:focus-visible {
+    outline: 2px solid var(--brand-primary);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+.btn:focus-visible,
+.nav-item:focus-visible,
+.chip:focus-visible,
+.source-toggle:focus-visible { outline-offset: 3px; }
+
+/* Inputs já têm anel via box-shadow — evita outline duplicado */
+.form-input:focus-visible,
+.form-select:focus-visible,
+.search-field input:focus-visible { outline: none; }
+
+/* Painéis reagem sutilmente ao hover */
+.panel { transition: border-color 0.25s ease; }
+.panel:hover { border-color: var(--border-default); }
+
+/* Botões desabilitados consistentes */
+.btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none !important; filter: none !important; }
+
+/* Empty state menos chapado */
+.empty-icon { filter: grayscale(0.15); }

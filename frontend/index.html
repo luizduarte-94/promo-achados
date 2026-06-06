@@ -120,7 +120,7 @@
                 <!-- Quick actions on dashboard -->
                 <div class="panel">
                     <div class="panel-header">
-                        <div class="panel-title">⚡ Ações Rápidas</div>
+                        <div class="panel-title">Ações Rápidas</div>
                     </div>
                     <div class="panel-body" style="display:flex; gap:12px; flex-wrap:wrap;">
                         <button class="btn btn-brand" onclick="App.switchTab('buscar', document.querySelector('[data-tab=buscar]'))">🔍 Buscar Ofertas</button>
@@ -132,7 +132,7 @@
                 <!-- Recent history on dashboard -->
                 <div class="panel">
                     <div class="panel-header">
-                        <div class="panel-title">📋 Atividade Recente</div>
+                        <div class="panel-title">Atividade Recente</div>
                     </div>
                     <div class="panel-body">
                         <ul class="history-list" id="dashboardHistory">
@@ -150,7 +150,7 @@
             <section id="tabOfertas" style="display:none;">
                 <div class="panel">
                     <div class="panel-header">
-                        <div class="panel-title">📦 Suas Ofertas</div>
+                        <div class="panel-title">Suas Ofertas</div>
                         <button class="btn btn-brand btn-sm" onclick="App.abrirModalNovaOferta()">+ Nova</button>
                     </div>
                     <div class="panel-body">
@@ -180,7 +180,7 @@
             <section id="tabBuscar" style="display:none;">
                 <div class="panel">
                     <div class="panel-header">
-                        <div class="panel-title">🔍 Buscar Ofertas</div>
+                        <div class="panel-title">Buscar Ofertas</div>
                     </div>
                     <div class="panel-body">
                         <div class="search-row">
@@ -205,7 +205,7 @@
             <section id="tabHistorico" style="display:none;">
                 <div class="panel">
                     <div class="panel-header">
-                        <div class="panel-title">📋 Histórico de Postagens</div>
+                        <div class="panel-title">Histórico de Postagens</div>
                         <button class="btn btn-ghost btn-sm" onclick="App.carregarHistorico()">🔄 Atualizar</button>
                     </div>
                     <div class="panel-body">
@@ -224,7 +224,7 @@
             <section id="tabRecorrentes" style="display:none;">
                 <div class="panel">
                     <div class="panel-header">
-                        <div class="panel-title">⭐ Produtos Recorrentes (Best Sellers)</div>
+                        <div class="panel-title">Produtos Recorrentes</div>
                         <button class="btn btn-brand btn-sm" onclick="App.abrirModalRecorrente()">+ Monitorar Produto</button>
                     </div>
                     <div class="panel-body">
@@ -246,7 +246,7 @@
             <section id="tabConfig" style="display:none;">
                 <div class="panel">
                     <div class="panel-header">
-                        <div class="panel-title">⚙️ Configurações</div>
+                        <div class="panel-title">Configurações</div>
                     </div>
                     <div class="panel-body">
                         <div class="form-group">
@@ -299,7 +299,7 @@
     <!-- MODAL: NOVA OFERTA -->
     <div class="modal-backdrop" id="modalNovaOferta" style="display:none;" onclick="if(event.target===this) App.fecharModal()">
         <div class="modal-box">
-            <div class="modal-title">📦 Nova Oferta Manual</div>
+            <div class="modal-title">Nova Oferta Manual</div>
             <div class="form-group">
                 <label class="form-label">Título do Produto *</label>
                 <input type="text" class="form-input" id="novoTitulo" placeholder="Ex: Creatina Monohidratada 250g">
@@ -339,7 +339,7 @@
     <!-- MODAL: LINK AFILIADO -->
     <div class="modal-backdrop" id="modalLink" style="display:none;" onclick="if(event.target===this) App.fecharModalLink()">
         <div class="modal-box">
-            <div class="modal-title">🔗 Link de Afiliado</div>
+            <div class="modal-title">Link de Afiliado</div>
             <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;">
                 Cole o link <code style="background:var(--bg-card);padding:2px 6px;border-radius:4px;">meli.la</code> ou link curto da Shopee.
             </p>
@@ -358,7 +358,7 @@
     <!-- MODAL: NOVO RECORRENTE -->
     <div class="modal-backdrop" id="modalRecorrente" style="display:none;" onclick="if(event.target===this) App.fecharModalRecorrente()">
         <div class="modal-box">
-            <div class="modal-title">⭐ Monitorar Produto</div>
+            <div class="modal-title">Monitorar Produto</div>
             <div class="form-group">
                 <label class="form-label">Título do Produto *</label>
                 <input type="text" class="form-input" id="recTitulo" placeholder="Ex: Creatina Integralmedica 300g">
@@ -390,7 +390,7 @@
     <!-- MODAL: HISTÓRICO DE PREÇOS -->
     <div class="modal-backdrop" id="modalHistPreco" style="display:none;" onclick="if(event.target===this) App.fecharModalHistPreco()">
         <div class="modal-box">
-            <div class="modal-title">📊 Histórico de Preços</div>
+            <div class="modal-title">Histórico de Preços</div>
             <div id="histPrecoBody">
                 <div class="empty"><div class="empty-icon">📊</div><div class="empty-text">Carregando...</div></div>
             </div>
