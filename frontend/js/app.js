@@ -282,11 +282,29 @@ const App = {
                 </a>
                 <div class="offer-footer">
                     <button class="btn btn-success btn-sm" onclick="App.postarOferta(${o.id})">📢 Postar</button>
+                    <button class="btn btn-ghost btn-sm" onclick="App.copiarWhatsApp(${o.id})" title="Copiar mensagem p/ WhatsApp">📋 WhatsApp</button>
                     ${linkBtn}
                     <button class="btn btn-danger btn-sm btn-icon" onclick="App.deletarOferta(${o.id})" title="Remover">🗑️</button>
                 </div>
             </div>
         `;
+    },
+
+    async copiarWhatsApp(id) {
+        try {
+            const resp = await fetch(`${API}/api/ofertas/${id}/mensagem?canal=whatsapp`);
+            if (!resp.ok) { const e = await resp.json(); throw new Error(e.detail || 'Falha'); }
+            const data = await resp.json();
+            await navigator.clipboard.writeText(data.texto);
+            const oferta = this.ofertas.find(o => o.id === id);
+            if (oferta && !oferta.link_afiliado) {
+                this.toast('Copiado! ⚠️ Sem link de afiliado — adicione antes de divulgar.', 'info');
+            } else {
+                this.toast('Mensagem copiada! Cole no WhatsApp 📋', 'success');
+            }
+        } catch (e) {
+            this.toast(`Erro ao copiar: ${e.message}`, 'error');
+        }
     },
 
     // =============================================

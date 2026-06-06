@@ -67,17 +67,24 @@ class WhatsAppChannel(BaseChannel):
         except Exception as e:
             return {"sucesso": False, "resposta": f"Erro ao enviar WhatsApp: {e}"}
 
+    def preview(self, oferta: dict) -> str:
+        """Retorna a mensagem formatada SEM enviar (para copiar/colar manual)."""
+        return self._montar_mensagem(oferta)
+
     def _montar_mensagem(self, oferta: dict) -> str:
-        """Monta mensagem para WhatsApp (texto puro, sem Markdown)."""
+        """Monta mensagem para WhatsApp.
+
+        Usa a formatação do WhatsApp: *negrito* e ~tachado~. Sem HTML.
+        """
         linhas = []
 
         desconto = oferta.get("desconto_pct", 0)
         if desconto >= 40:
-            linhas.append("🔥🔥🔥 OFERTA IMPERDÍVEL 🔥🔥🔥")
+            linhas.append("🔥🔥🔥 *OFERTA IMPERDÍVEL* 🔥🔥🔥")
         elif desconto >= 25:
-            linhas.append("‼️ PREÇO BAIXOU ‼️")
+            linhas.append("‼️ *PREÇO BAIXOU* ‼️")
         else:
-            linhas.append("💰 ACHADO DO DIA 💰")
+            linhas.append("💰 *ACHADO DO DIA* 💰")
         linhas.append("")
 
         linhas.append(f"📦 {oferta['titulo']}")
@@ -86,15 +93,20 @@ class WhatsAppChannel(BaseChannel):
         preco_fmt = self.formatar_preco(oferta["preco"])
         if oferta.get("preco_original") and oferta["preco_original"] > oferta["preco"]:
             preco_orig_fmt = self.formatar_preco(oferta["preco_original"])
-            linhas.append(f"De: {preco_orig_fmt}")
-            linhas.append(f"Por: {preco_fmt} 🏷️")
-            linhas.append(f"📉 {desconto:.0f}% OFF")
+            linhas.append(f"De: ~{preco_orig_fmt}~")
+            linhas.append(f"*Por: {preco_fmt}* 🏷️")
+            linhas.append(f"📉 *{desconto:.0f}% OFF*")
         else:
-            linhas.append(f"Por: {preco_fmt}")
+            linhas.append(f"*Por: {preco_fmt}*")
         linhas.append("")
 
         if oferta.get("frete_gratis"):
             linhas.append("🚚 Frete Grátis!")
+            linhas.append("")
+
+        cupom = (oferta.get("dados_extra") or {}).get("cupom", "")
+        if cupom:
+            linhas.append(f"🎟️ *Cupom:* {cupom}")
             linhas.append("")
 
         link = oferta.get("link_afiliado") or oferta.get("link_original", "")

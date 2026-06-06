@@ -4,6 +4,7 @@ Rotas REST da API — consumidas pelo dashboard frontend.
 """
 
 import time
+from urllib.parse import quote
 import requests
 from fastapi import APIRouter, HTTPException, Body
 from fastapi.responses import RedirectResponse
@@ -52,6 +53,31 @@ def obter_oferta(oferta_id: int):
     if not oferta:
         raise HTTPException(status_code=404, detail="Oferta não encontrada")
     return oferta
+
+
+@router.get("/ofertas/{oferta_id}/mensagem")
+def mensagem_oferta(oferta_id: int, canal: str = "whatsapp"):
+    """Gera a mensagem pronta da oferta para copiar/colar (sem enviar).
+
+    Retorna o texto formatado e um wa_url (link wa.me com o texto preenchido).
+    """
+    oferta = db.obter_oferta(oferta_id)
+    if not oferta:
+        raise HTTPException(status_code=404, detail="Oferta não encontrada")
+
+    canal_obj = canais.get(canal)
+    if not canal_obj:
+        raise HTTPException(status_code=400, detail=f"Canal desconhecido: {canal}")
+
+    texto = canal_obj.preview(oferta)
+    if not texto:
+        raise HTTPException(status_code=400, detail=f"Canal '{canal}' não suporta mensagem manual")
+
+    return {
+        "canal": canal,
+        "texto": texto,
+        "wa_url": "https://wa.me/?text=" + quote(texto),
+    }
 
 
 @router.put("/ofertas/{oferta_id}")
