@@ -7,7 +7,6 @@ import sqlite3
 import json
 import re
 from datetime import datetime
-from pathlib import Path
 from backend.config import config
 
 

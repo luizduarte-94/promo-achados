@@ -14,7 +14,6 @@ import requests
 import bs4
 from backend.scrapers.base import BaseScraper
 from backend.config import config
-from backend import database as db
 
 # --- Rate limiting global (compartilhado entre agendador e API) ---
 _REQUEST_LOCK = threading.Lock()
@@ -142,7 +141,10 @@ class MercadoLivreScraper(BaseScraper):
         """Extrai as informações de um elemento HTML do produto."""
         try:
             # 1. Título e Link
-            a_tag = item.select_one('a.poly-component__title') or item.select_one('.ui-search-item__title').parent
+            a_tag = item.select_one('a.poly-component__title')
+            if not a_tag:
+                titulo_el = item.select_one('.ui-search-item__title')
+                a_tag = titulo_el.parent if titulo_el else None
             if not a_tag:
                 return None
                 

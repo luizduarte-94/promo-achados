@@ -3,7 +3,7 @@
 Módulo de IA (Copywriting) para geração de textos persuasivos.
 """
 
-import os
+import re
 from google import genai
 from backend.config import config
 
@@ -101,7 +101,6 @@ Forma de Pagamento: {pagamento}
 
     if cupom:
         prompt += f"\nATENÇÃO: Este produto tem um CUPOM de desconto: '{cupom}'!\n"
-        import re
         preco_final_cupom = None
         try:
             match_rs = re.search(r'R\$\s*([\d\.,]+)', cupom, re.IGNORECASE)

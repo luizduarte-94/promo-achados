@@ -1,0 +1,7 @@
+# Normaliza fim de linha: LF no repositório, nativo no working tree.
+* text=auto
+*.py text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.md text eol=lf
