@@ -11,6 +11,7 @@ from backend.scrapers.mercadolivre import MercadoLivreScraper
 from backend.scrapers.shopee import ShopeeScraper
 from backend.channels.telegram import TelegramChannel
 from backend.scoring import score_oferta
+from backend.espelho import termos_do_espelho
 from backend import database as db
 from backend.config import config
 
@@ -106,6 +107,12 @@ def tarefa_busca_automatica():
             total_novas += novas_sp
         except Exception as e:
             print(f"[SHOPEE] Erro na busca automática: {e}")
+
+    # Espelho: grupos WhatsApp como sinal de tendência (no-op se ESPELHO_ENABLED=false)
+    try:
+        total_novas += buscar_do_espelho()
+    except Exception as e:
+        print(f"[ESPELHO] Erro: {e}")
 
     print(f"[AGENDADOR] Busca concluída. {total_novas} novas ofertas adicionadas.")
 
@@ -214,6 +221,63 @@ def monitorar_recorrentes():
                 print(f"[MONITOR] #{rec['id']} sem queda relevante (R${preco_novo})")
         except Exception as e:
             print(f"[MONITOR] Erro no recorrente #{rec.get('id')}: {e}")
+
+
+def buscar_do_espelho() -> int:
+    """Busca produtos sinalizados pelos grupos-espelho do WhatsApp.
+
+    Lê os termos novos de data/espelho_inbox.jsonl (gravado pelo bot-espelho),
+    busca cada um no ML (e Shopee, se configurada) e salva as ofertas novas com
+    fonte 'espelho'. NÃO copia o texto dos grupos — só usa o produto como sinal.
+    Retorna a quantidade de ofertas novas adicionadas.
+    """
+    if not config.ESPELHO_ENABLED:
+        return 0
+
+    termos = termos_do_espelho()
+    if not termos:
+        return 0
+
+    print(f"[ESPELHO] {len(termos)} termo(s) dos grupos: {termos}")
+    novas = 0
+    for termo in termos:
+        # Mercado Livre (já filtra desconto/preço por padrão)
+        try:
+            for oferta in ml_scraper.buscar(termo):
+                if db.oferta_existe(oferta["link_original"]):
+                    continue
+                oferta["fonte"] = "espelho"
+                dep_id = db.classificar_departamento(oferta["titulo"])
+                if dep_id:
+                    oferta["departamento_id"] = dep_id
+                db.criar_oferta(oferta)
+                db.registrar_preco(
+                    titulo=oferta["titulo"],
+                    preco=oferta["preco"],
+                    link_original=oferta["link_original"],
+                    loja=oferta.get("loja", "Mercado Livre"),
+                    preco_original=oferta.get("preco_original"),
+                    departamento_id=dep_id,
+                )
+                novas += 1
+        except Exception as e:
+            print(f"[ESPELHO][ML] Erro em '{termo}': {e}")
+
+        # Shopee (se houver credenciais)
+        if config.shopee_ok():
+            try:
+                for oferta in shopee_scraper.buscar(termo):
+                    if db.oferta_existe(oferta["link_original"]):
+                        continue
+                    oferta["fonte"] = "espelho"
+                    db.criar_oferta(oferta)
+                    novas += 1
+            except Exception as e:
+                print(f"[ESPELHO][SHOPEE] Erro em '{termo}': {e}")
+
+    db.registrar_busca("espelho", ", ".join(termos)[:200], novas)
+    print(f"[ESPELHO] {novas} nova(s) oferta(s) a partir dos grupos.")
+    return novas
 
 
 def iniciar_agendador():

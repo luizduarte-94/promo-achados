@@ -79,6 +79,15 @@ class Config:
     MONITOR_RECORRENTES_ENABLED: bool = os.getenv("MONITOR_RECORRENTES_ENABLED", "False").lower() == "true"
     MONITOR_RECORRENTES_INTERVALO_MINUTOS: int = int(os.getenv("MONITOR_RECORRENTES_INTERVALO_MINUTOS", "360"))
 
+    # --- Espelho (grupos WhatsApp como sinal de tendência) ---
+    # O bot-espelho (Node) grava as mensagens dos grupos em data/espelho_inbox.jsonl.
+    # O agendador lê os termos novos e busca esses produtos nas fontes (ML/Shopee).
+    ESPELHO_ENABLED: bool = os.getenv("ESPELHO_ENABLED", "True").lower() == "true"
+    # Quantos termos (produtos) buscar por ciclo — ML tem rate limit agressivo.
+    ESPELHO_MAX_TERMOS: int = int(os.getenv("ESPELHO_MAX_TERMOS", "5"))
+    ESPELHO_INBOX = _BASE_DIR / "data" / "espelho_inbox.jsonl"
+    ESPELHO_OFFSET = _BASE_DIR / "data" / "espelho_inbox.offset"
+
     @classmethod
     def telegram_ok(cls) -> bool:
         return bool(cls.TELEGRAM_BOT_TOKEN and "COLE" not in cls.TELEGRAM_BOT_TOKEN)
