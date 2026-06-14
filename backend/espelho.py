@@ -23,9 +23,10 @@ _PRECO = re.compile(r"R\$\s?\d[\d.,]*", re.IGNORECASE)
 _EMOJI = re.compile("[\U0001f000-\U0001faff☀-➿←-⇿⬀-⯿]")
 # Palavras de promoção que não ajudam a identificar o produto.
 _LIXO = re.compile(
-    r"\b(cupom|frete\s*gr[áa]tis|oferta[s]?|promo[cç][aã]o|desconto|por\s+apenas|"
-    r"s[óo]\s+hoje|aproveite|corre|link\s+na\s+bio|imperd[íi]vel|baixou|"
-    r"menor\s+pre[çc]o|compre|clique|aqui)\b",
+    r"\b(cupom|frete\s*gr[áa]tis|oferta[s]?|promo[cç][aã]o|desconto|"
+    r"por\s+apenas|por|apenas|use|ganhe|garanta|aproveite|corre|"
+    r"s[óo]\s+hoje|link\s+na\s+bio|imperd[íi]vel|baixou|menor\s+pre[çc]o|"
+    r"compre|clique|aqui)\b",
     re.IGNORECASE,
 )
 
@@ -47,6 +48,10 @@ def extrair_produto(texto: str) -> str:
     if not texto:
         return ""
     t = _LINK.sub(" ", texto)
+    # O nome do produto vem ANTES do preço; corta o resto (preço, cupom, CTA).
+    m = _PRECO.search(t)
+    if m and m.start() > 0:
+        t = t[: m.start()]
     t = _PRECO.sub(" ", t)
     t = _EMOJI.sub(" ", t)
     t = _LIXO.sub(" ", t)
