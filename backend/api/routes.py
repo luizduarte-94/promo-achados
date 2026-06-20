@@ -29,6 +29,56 @@ canais = {
 }
 
 
+def revalidar_preco(oferta: dict) -> dict:
+    """Re-busca o preço atual da oferta no ML e atualiza o banco se mudou.
+
+    Evita divulgar preço velho. Muta `oferta` (preco/preco_original/desconto_pct)
+    com o valor atual e persiste no banco. Retorna status:
+      - "ok"          : preço igual ou caiu (segue normal)
+      - "subiu"       : subiu além do limite -> chamador deve BLOQUEAR
+      - "sumiu"       : produto não encontrado agora -> chamador deve BLOQUEAR
+      - "indisponivel": não deu pra revalidar (rede/sem título/flag off) -> segue com aviso
+    """
+    if not config.REVALIDAR_PRECO_ENABLED:
+        return {"status": "indisponivel"}
+
+    titulo = (oferta.get("titulo") or "").strip()
+    if not titulo:
+        return {"status": "indisponivel"}
+
+    pid = db.extrair_produto_id(oferta.get("link_original"))
+    try:
+        resultados = ml_scraper.buscar(titulo, filtrar_qualidade=False)
+    except Exception as e:
+        print(f"[REVALIDA] Erro ao revalidar '{titulo}': {e}")
+        return {"status": "indisponivel"}
+
+    match = None
+    if pid:
+        for r in resultados:
+            if db.extrair_produto_id(r.get("link_original")) == pid:
+                match = r
+                break
+    if not match:
+        return {"status": "sumiu"}
+
+    antigo = float(oferta.get("preco") or 0)
+    novo = float(match.get("preco") or 0)
+    if novo <= 0:
+        return {"status": "indisponivel"}
+
+    orig = match.get("preco_original")
+    desc = round((orig - novo) / orig * 100, 1) if orig and orig > novo else 0
+    db.atualizar_oferta(oferta["id"], {"preco": novo, "preco_original": orig, "desconto_pct": desc})
+    oferta["preco"], oferta["preco_original"], oferta["desconto_pct"] = novo, orig, desc
+
+    var = ((novo - antigo) / antigo * 100) if antigo else 0
+    res = {"status": "ok", "preco_antigo": antigo, "preco_novo": novo, "variacao_pct": round(var, 1)}
+    if var > config.REVALIDAR_BLOQUEIO_ALTA_PCT:
+        res["status"] = "subiu"
+    return res
+
+
 # =============================================
 # OFERTAS
 # =============================================
@@ -69,6 +119,9 @@ def mensagem_oferta(oferta_id: int, canal: str = "whatsapp"):
     if not canal_obj:
         raise HTTPException(status_code=400, detail=f"Canal desconhecido: {canal}")
 
+    # Revalida o preço atual para a mensagem refletir o valor real (não bloqueia o copiar).
+    rev = revalidar_preco(oferta)
+
     texto = canal_obj.preview(oferta)
     if not texto:
         raise HTTPException(status_code=400, detail=f"Canal '{canal}' não suporta mensagem manual")
@@ -76,6 +129,7 @@ def mensagem_oferta(oferta_id: int, canal: str = "whatsapp"):
     return {
         "canal": canal,
         "texto": texto,
+        "revalidacao": rev,
         "wa_url": "https://wa.me/?text=" + quote(texto),
     }
 
@@ -117,6 +171,23 @@ def postar_oferta(oferta_id: int, dados: dict = Body(...)):
         raise HTTPException(
             status_code=400,
             detail="Adicione o link de afiliado antes de postar (esta oferta não tem link_afiliado)."
+        )
+
+    # Revalida o preço atual antes de postar (evita divulgar preço velho/errado).
+    rev = revalidar_preco(oferta)
+    if rev["status"] == "subiu":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Preço SUBIU {rev['variacao_pct']}% (de R${rev['preco_antigo']:.2f} "
+                f"para R${rev['preco_novo']:.2f}). Não postei pra não divulgar errado — "
+                "o card já foi atualizado, revise antes de postar."
+            ),
+        )
+    if rev["status"] == "sumiu":
+        raise HTTPException(
+            status_code=409,
+            detail="Produto não encontrado no ML agora (pode ter saído do ar). Não postei.",
         )
 
     canais_selecionados = dados.get("canais", ["telegram"])

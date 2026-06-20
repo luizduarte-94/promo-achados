@@ -63,6 +63,11 @@ class Config:
     BUSCA_PRECO_MAXIMO: float = float(os.getenv("BUSCA_PRECO_MAXIMO", "500"))
     PAUSA_ENTRE_POSTS: int = int(os.getenv("PAUSA_ENTRE_POSTS", "3"))
 
+    # --- Revalidação de preço (re-checa o preço atual antes de postar/copiar) ---
+    # Evita divulgar preço velho. Bloqueia o post se o preço subiu além do limite.
+    REVALIDAR_PRECO_ENABLED: bool = os.getenv("REVALIDAR_PRECO_ENABLED", "True").lower() == "true"
+    REVALIDAR_BLOQUEIO_ALTA_PCT: float = float(os.getenv("REVALIDAR_BLOQUEIO_ALTA_PCT", "5"))
+
     # --- Painel (autenticação básica) ---
     # PANEL_PASSWORD vazio = auth DESLIGADA (dev local). Defina p/ proteger o painel.
     PANEL_USER: str = os.getenv("PANEL_USER", "admin")

@@ -296,8 +296,13 @@ const App = {
             if (!resp.ok) { const e = await resp.json(); throw new Error(e.detail || 'Falha'); }
             const data = await resp.json();
             await navigator.clipboard.writeText(data.texto);
+            const rev = data.revalidacao || {};
             const oferta = this.ofertas.find(o => o.id === id);
-            if (oferta && !oferta.link_afiliado) {
+            if (rev.status === 'sumiu') {
+                this.toast('Copiado, mas ⚠️ produto sumiu do ML — confira antes de divulgar.', 'error');
+            } else if (rev.status === 'subiu' || (rev.variacao_pct && Math.abs(rev.variacao_pct) >= 1)) {
+                this.toast(`Copiado! Preço atualizado: R$ ${rev.preco_novo} (mudou ${rev.variacao_pct}%).`, 'info');
+            } else if (oferta && !oferta.link_afiliado) {
                 this.toast('Copiado! ⚠️ Sem link de afiliado — adicione antes de divulgar.', 'info');
             } else {
                 this.toast('Mensagem copiada! Cole no WhatsApp 📋', 'success');
@@ -394,6 +399,12 @@ const App = {
                 body: JSON.stringify({ canais: ['telegram'] }),
             });
             const data = await resp.json();
+            if (!resp.ok) {
+                // 409 = preço subiu/produto sumiu (revalidação) ou outro bloqueio
+                this.toast(data.detail || 'Não foi possível postar', 'error');
+                await this.carregarOfertas();
+                return;
+            }
             for (const r of (data.resultados || [])) {
                 this.toast(r.sucesso ? `Postado no ${r.canal}!` : `Erro: ${r.resposta}`, r.sucesso ? 'success' : 'error');
             }
