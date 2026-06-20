@@ -17,8 +17,15 @@ class Config:
 
     # --- Paths ---
     BASE_DIR = _BASE_DIR
-    DB_PATH = _BASE_DIR / "promo_achados.db"
+    DB_PATH = _BASE_DIR / "promo_achados.db"  # SQLite legado (em migração p/ Postgres)
     FRONTEND_DIR = _BASE_DIR / "frontend"
+
+    # --- PostgreSQL (banco principal; ver docker-compose.yml) ---
+    # Default casa com o docker-compose local. A aplicação só passa a USAR o
+    # Postgres na TASK-04; por ora a camada ORM (backend/models.py) o consome.
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL", "postgresql://promo:promo@localhost:5432/promo_achados"
+    )
 
     # --- Telegram ---
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
