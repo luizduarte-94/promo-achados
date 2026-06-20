@@ -13,6 +13,7 @@ from backend.channels.telegram import TelegramChannel
 from backend.scoring import score_oferta
 from backend.espelho import termos_do_espelho
 from backend import database as db
+from backend import precos
 from backend.config import config
 
 
@@ -52,6 +53,11 @@ def auto_postar():
 
     print(f"[AUTO-POST] Postando {len(candidatas)} oferta(s) no Telegram...")
     for oferta in candidatas:
+        # Revalida o preço antes de postar — nunca divulga preço velho (igual ao manual).
+        rev = precos.revalidar_preco(oferta)
+        if rev["status"] in ("subiu", "sumiu"):
+            print(f"[AUTO-POST] #{oferta['id']} pulada (preço {rev['status']}).")
+            continue
         resultado = telegram.enviar(oferta)
         db.registrar_postagem(oferta["id"], "telegram", resultado["sucesso"], resultado["resposta"])
         print(f"[AUTO-POST] #{oferta['id']} score={score_oferta(oferta)} -> {resultado['sucesso']}")
@@ -69,24 +75,7 @@ def tarefa_busca_automatica():
     # Mercado Livre
     try:
         resultados_ml = ml_scraper.buscar_todas_palavras()
-        novas_ml = 0
-        for oferta in resultados_ml:
-            if not db.oferta_existe(oferta["link_original"]):
-                # Classificação automática de departamento
-                dep_id = db.classificar_departamento(oferta["titulo"])
-                if dep_id:
-                    oferta["departamento_id"] = dep_id
-                db.criar_oferta(oferta)
-                novas_ml += 1
-                # Registrar preço no histórico
-                db.registrar_preco(
-                    titulo=oferta["titulo"],
-                    preco=oferta["preco"],
-                    link_original=oferta["link_original"],
-                    loja=oferta.get("loja", "Mercado Livre"),
-                    preco_original=oferta.get("preco_original"),
-                    departamento_id=dep_id,
-                )
+        novas_ml = len(db.coletar_e_salvar(resultados_ml))
         db.registrar_busca("mercadolivre", "auto", len(resultados_ml))
         print(f"[ML] {len(resultados_ml)} encontradas, {novas_ml} novas")
         total_novas += novas_ml
@@ -97,11 +86,7 @@ def tarefa_busca_automatica():
     if config.shopee_ok():
         try:
             resultados_sp = shopee_scraper.buscar_todas_palavras()
-            novas_sp = 0
-            for oferta in resultados_sp:
-                if not db.oferta_existe(oferta["link_original"]):
-                    db.criar_oferta(oferta)
-                    novas_sp += 1
+            novas_sp = len(db.coletar_e_salvar(resultados_sp))
             db.registrar_busca("shopee", "auto", len(resultados_sp))
             print(f"[SHOPEE] {len(resultados_sp)} encontradas, {novas_sp} novas")
             total_novas += novas_sp
@@ -128,19 +113,13 @@ def tarefa_busca_automatica():
 def _casar_recorrente(rec: dict, resultados: list[dict]) -> dict | None:
     """Escolhe, entre os resultados da busca, qual corresponde ao recorrente.
 
-    Prioriza o resultado com mesmo ID de produto (MLB/Shopee) quando o
-    recorrente tem link; caso contrário, pega o de menor preço.
+    Prioriza o resultado com mesmo ID de produto (MLB/Shopee); caso não ache,
+    cai para o de menor preço (monitoramento é best-effort).
     """
     if not resultados:
         return None
-
-    pid = db.extrair_produto_id(rec.get("link_original"))
-    if pid:
-        for r in resultados:
-            if db.extrair_produto_id(r.get("link_original")) == pid:
-                return r
-
-    return min(resultados, key=lambda r: r.get("preco", float("inf")))
+    match = precos.casar_por_produto_id(rec.get("link_original"), resultados)
+    return match or min(resultados, key=lambda r: r.get("preco", float("inf")))
 
 
 def monitorar_recorrentes():
@@ -243,35 +222,14 @@ def buscar_do_espelho() -> int:
     for termo in termos:
         # Mercado Livre (já filtra desconto/preço por padrão)
         try:
-            for oferta in ml_scraper.buscar(termo):
-                if db.oferta_existe(oferta["link_original"]):
-                    continue
-                oferta["fonte"] = "espelho"
-                dep_id = db.classificar_departamento(oferta["titulo"])
-                if dep_id:
-                    oferta["departamento_id"] = dep_id
-                db.criar_oferta(oferta)
-                db.registrar_preco(
-                    titulo=oferta["titulo"],
-                    preco=oferta["preco"],
-                    link_original=oferta["link_original"],
-                    loja=oferta.get("loja", "Mercado Livre"),
-                    preco_original=oferta.get("preco_original"),
-                    departamento_id=dep_id,
-                )
-                novas += 1
+            novas += len(db.coletar_e_salvar(ml_scraper.buscar(termo), fonte="espelho"))
         except Exception as e:
             print(f"[ESPELHO][ML] Erro em '{termo}': {e}")
 
         # Shopee (se houver credenciais)
         if config.shopee_ok():
             try:
-                for oferta in shopee_scraper.buscar(termo):
-                    if db.oferta_existe(oferta["link_original"]):
-                        continue
-                    oferta["fonte"] = "espelho"
-                    db.criar_oferta(oferta)
-                    novas += 1
+                novas += len(db.coletar_e_salvar(shopee_scraper.buscar(termo), fonte="espelho"))
             except Exception as e:
                 print(f"[ESPELHO][SHOPEE] Erro em '{termo}': {e}")
 

@@ -9,6 +9,7 @@ import requests
 from fastapi import APIRouter, HTTPException, Body
 from fastapi.responses import RedirectResponse
 from backend import database as db
+from backend.precos import revalidar_preco
 from backend.scrapers.mercadolivre import MercadoLivreScraper
 from backend.scrapers.shopee import ShopeeScraper
 from backend.channels.telegram import TelegramChannel
@@ -27,56 +28,6 @@ canais = {
     "whatsapp": WhatsAppChannel(),
     "instagram": InstagramChannel(),
 }
-
-
-def revalidar_preco(oferta: dict) -> dict:
-    """Re-busca o preço atual da oferta no ML e atualiza o banco se mudou.
-
-    Evita divulgar preço velho. Muta `oferta` (preco/preco_original/desconto_pct)
-    com o valor atual e persiste no banco. Retorna status:
-      - "ok"          : preço igual ou caiu (segue normal)
-      - "subiu"       : subiu além do limite -> chamador deve BLOQUEAR
-      - "sumiu"       : produto não encontrado agora -> chamador deve BLOQUEAR
-      - "indisponivel": não deu pra revalidar (rede/sem título/flag off) -> segue com aviso
-    """
-    if not config.REVALIDAR_PRECO_ENABLED:
-        return {"status": "indisponivel"}
-
-    titulo = (oferta.get("titulo") or "").strip()
-    if not titulo:
-        return {"status": "indisponivel"}
-
-    pid = db.extrair_produto_id(oferta.get("link_original"))
-    try:
-        resultados = ml_scraper.buscar(titulo, filtrar_qualidade=False)
-    except Exception as e:
-        print(f"[REVALIDA] Erro ao revalidar '{titulo}': {e}")
-        return {"status": "indisponivel"}
-
-    match = None
-    if pid:
-        for r in resultados:
-            if db.extrair_produto_id(r.get("link_original")) == pid:
-                match = r
-                break
-    if not match:
-        return {"status": "sumiu"}
-
-    antigo = float(oferta.get("preco") or 0)
-    novo = float(match.get("preco") or 0)
-    if novo <= 0:
-        return {"status": "indisponivel"}
-
-    orig = match.get("preco_original")
-    desc = round((orig - novo) / orig * 100, 1) if orig and orig > novo else 0
-    db.atualizar_oferta(oferta["id"], {"preco": novo, "preco_original": orig, "desconto_pct": desc})
-    oferta["preco"], oferta["preco_original"], oferta["desconto_pct"] = novo, orig, desc
-
-    var = ((novo - antigo) / antigo * 100) if antigo else 0
-    res = {"status": "ok", "preco_antigo": antigo, "preco_novo": novo, "variacao_pct": round(var, 1)}
-    if var > config.REVALIDAR_BLOQUEIO_ALTA_PCT:
-        res["status"] = "subiu"
-    return res
 
 
 # =============================================
@@ -262,55 +213,13 @@ def buscar_ofertas(dados: dict = Body(default={})):
     todas_ofertas = []
 
     if "mercadolivre" in fontes:
-        if palavra:
-            resultados = ml_scraper.buscar(palavra)
-        else:
-            resultados = ml_scraper.buscar_todas_palavras()
-
-        for oferta in resultados:
-            if not db.oferta_existe(oferta["link_original"]):
-                # Classificação automática de departamento
-                dep_id = db.classificar_departamento(oferta["titulo"])
-                if dep_id:
-                    oferta["departamento_id"] = dep_id
-                oferta_id = db.criar_oferta(oferta)
-                oferta["id"] = oferta_id
-                todas_ofertas.append(oferta)
-                # Registrar preço no histórico
-                db.registrar_preco(
-                    titulo=oferta["titulo"],
-                    preco=oferta["preco"],
-                    link_original=oferta["link_original"],
-                    loja=oferta.get("loja", "Mercado Livre"),
-                    preco_original=oferta.get("preco_original"),
-                    departamento_id=dep_id,
-                )
-
+        resultados = ml_scraper.buscar(palavra) if palavra else ml_scraper.buscar_todas_palavras()
+        todas_ofertas.extend(db.coletar_e_salvar(resultados))
         db.registrar_busca("mercadolivre", palavra or "todas", len(resultados))
 
     if "shopee" in fontes:
-        if palavra:
-            resultados = shopee_scraper.buscar(palavra)
-        else:
-            resultados = shopee_scraper.buscar_todas_palavras()
-
-        for oferta in resultados:
-            if not db.oferta_existe(oferta["link_original"]):
-                dep_id = db.classificar_departamento(oferta["titulo"])
-                if dep_id:
-                    oferta["departamento_id"] = dep_id
-                oferta_id = db.criar_oferta(oferta)
-                oferta["id"] = oferta_id
-                todas_ofertas.append(oferta)
-                db.registrar_preco(
-                    titulo=oferta["titulo"],
-                    preco=oferta["preco"],
-                    link_original=oferta["link_original"],
-                    loja=oferta.get("loja", "Shopee"),
-                    preco_original=oferta.get("preco_original"),
-                    departamento_id=dep_id,
-                )
-
+        resultados = shopee_scraper.buscar(palavra) if palavra else shopee_scraper.buscar_todas_palavras()
+        todas_ofertas.extend(db.coletar_e_salvar(resultados))
         db.registrar_busca("shopee", palavra or "todas", len(resultados))
 
     return {

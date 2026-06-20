@@ -363,6 +363,42 @@ def oferta_existe(link_original: str) -> bool:
     return row is not None
 
 
+def coletar_e_salvar(ofertas: list[dict], fonte: str | None = None) -> list[dict]:
+    """Salva uma leva de ofertas brutas (de scraper) com o mesmo pipeline em todo lugar.
+
+    Para cada oferta: pula duplicata, classifica departamento, cria no banco e
+    registra o preço no histórico. Usado por busca manual, busca automática e
+    espelho — fonte única para não divergir (ex.: Shopee esquecer o histórico).
+
+    Args:
+        ofertas: lista de dicts no formato do scraper.
+        fonte: se informado, sobrescreve o campo 'fonte' de cada oferta.
+
+    Returns:
+        Lista das ofertas novas criadas (com 'id' e 'departamento_id' preenchidos).
+    """
+    novas: list[dict] = []
+    for oferta in ofertas:
+        if oferta_existe(oferta.get("link_original")):
+            continue
+        if fonte:
+            oferta["fonte"] = fonte
+        dep_id = classificar_departamento(oferta.get("titulo", ""))
+        if dep_id:
+            oferta["departamento_id"] = dep_id
+        oferta["id"] = criar_oferta(oferta)
+        registrar_preco(
+            titulo=oferta.get("titulo", ""),
+            preco=oferta.get("preco", 0),
+            link_original=oferta.get("link_original"),
+            loja=oferta.get("loja"),
+            preco_original=oferta.get("preco_original"),
+            departamento_id=dep_id,
+        )
+        novas.append(oferta)
+    return novas
+
+
 # =============================================
 # POSTAGENS
 # =============================================
