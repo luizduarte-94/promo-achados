@@ -51,6 +51,13 @@ def get_engine() -> Engine:
     return _engine
 
 
+def reconfigurar(url: str) -> None:
+    """Reaponta o banco em runtime (usado por testes p/ alternar SQLite/Postgres)."""
+    global _engine, _Session
+    _engine = criar_engine(url)
+    _Session = criar_session_factory(_engine)
+
+
 def _get_conn():
     """Conexão DBAPI bruta (compat com scripts/testes). Prefira as funções públicas."""
     return _engine.raw_connection()

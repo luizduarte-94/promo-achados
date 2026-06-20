@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-PROMO ACHADOS BRASIL — Entry Point
-===================================
-Inicia o servidor FastAPI com dashboard + API REST + agendador.
+PROMO ACHADOS BRASIL — Entry Point (API)
+========================================
+Inicia SÓ o servidor FastAPI (dashboard + API REST). O agendador (jobs de
+busca/postagem) roda num processo SEPARADO — ver backend/scheduler_worker.py.
 
 Uso:
-    python main.py
+    python main.py                      # API
+    python -m backend.scheduler_worker  # agendador (outro terminal)
 
 O dashboard abre em: http://localhost:8000
 """
@@ -21,7 +23,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend import database as db
 from backend.api.routes import router as api_router
-from backend.scheduler import iniciar_agendador, parar_agendador
 from backend.config import config
 
 
@@ -47,15 +48,14 @@ async def lifespan(app: FastAPI):
     else:
         print("  [!!] Painel SEM senha (PANEL_PASSWORD vazio). Defina no .env p/ proteger.")
 
-    iniciar_agendador()
+    print("  [i] Agendador roda à parte: python -m backend.scheduler_worker")
     print(f"\n  Dashboard: http://localhost:8000")
     print("=" * 55 + "\n")
 
     yield
 
     # Shutdown
-    parar_agendador()
-    print("\n  Promo Achados Brasil finalizado.\n")
+    print("\n  Promo Achados Brasil (API) finalizado.\n")
 
 
 app = FastAPI(
