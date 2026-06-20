@@ -1,0 +1,28 @@
+# PostgreSQL local para desenvolvimento (migração SQLite -> Postgres).
+# Sobe com:   docker compose up -d
+# Derruba:    docker compose down   (use -v para apagar os dados do volume)
+#
+# Credenciais vêm do .env (copie de .env.example). Defaults locais abaixo
+# servem só para dev — NUNCA use essas senhas em produção.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: promo_achados_pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-promo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-promo}
+      POSTGRES_DB: ${POSTGRES_DB:-promo_achados}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-promo} -d ${POSTGRES_DB:-promo_achados}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

@@ -16,3 +16,8 @@ node_modules/
 .wwebjs_auth/
 .wwebjs_cache/
 public-site/node_modules/
+
+# PostgreSQL — dados locais / dumps (o volume é gerenciado pelo Docker)
+pgdata/
+*.sql.bak
+*.dump
