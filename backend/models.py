@@ -143,6 +143,26 @@ class ProdutoRecorrente(Base):
     criado_em: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ClickEvent(Base):
+    """Evento de clique no redirecionador interno /r/{oferta_id} (TASK-13).
+
+    Tabela append-only de analytics (alta escrita): `oferta_id` é indexado mas
+    SEM FK rígida — não queremos que apagar uma oferta quebre/derrube o log de
+    cliques, nem o inverso. O par (canal, created_at) alimenta CTR/EPC; o
+    `ip_hash` permite deduplicar cliques sem guardar o IP em claro (LGPD).
+    """
+
+    __tablename__ = "click_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    oferta_id: Mapped[int] = mapped_column(Integer, index=True)
+    canal: Mapped[str] = mapped_column(String(40), index=True)
+    ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
 def criar_engine(url: str | None = None) -> Engine:
     """Cria o engine. Para Postgres usa pool com pre-ping; SQLite sem pool args."""
     url = url or config.DATABASE_URL
