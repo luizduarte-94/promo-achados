@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend import database as db
 from backend.analytics.tracking import registrar_clique, resolver_destino
+from backend.analytics.reports import gerar_resumo
 from backend.api.routes import router as api_router
 from backend.config import config
 
@@ -132,6 +133,17 @@ def redirect_oferta(oferta_id: int, request: Request, background: BackgroundTask
     ip = request.client.host if request.client else None
     background.add_task(registrar_clique, oferta_id, c, ip)
     return RedirectResponse(url=destino, status_code=302)
+
+
+@app.get("/analytics/summary")
+def analytics_summary(limite: int = 10, dias: int | None = None):
+    """Resumo analítico: cliques x ofertas (TASK-16).
+
+    Cruza click_events com ofertas e devolve cliques por canal, top ofertas,
+    faturamento estimado e EPC por canal. CTR vem como indisponível (sem
+    impressões instrumentadas). Protegido pelo Basic Auth do painel (admin).
+    """
+    return gerar_resumo(limite=limite, dias=dias)
 
 
 @app.get("/")
