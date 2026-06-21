@@ -9,6 +9,7 @@ Este módulo está preparado para funcionar quando as credenciais forem fornecid
 import requests
 from backend.channels.base import BaseChannel
 from backend.config import config
+from backend.monetization import gerar_link_afiliado
 
 
 class WhatsAppChannel(BaseChannel):
@@ -71,6 +72,17 @@ class WhatsAppChannel(BaseChannel):
         """Retorna a mensagem formatada SEM enviar (para copiar/colar manual)."""
         return self._montar_mensagem(oferta)
 
+    def _link_rastreado(self, oferta: dict) -> str:
+        """Link de afiliado rastreado p/ o canal WhatsApp (TASK-12).
+
+        Usa o motor de monetização (TASK-10) com canal="whatsapp" + produto_id,
+        em vez do link cru — cada clique passa a ser atribuído ao canal.
+        """
+        base = oferta.get("link_afiliado") or oferta.get("link_original") or ""
+        if not base:
+            return ""
+        return gerar_link_afiliado(base, canal="whatsapp", produto_id=oferta.get("produto_id"))
+
     def _montar_mensagem(self, oferta: dict) -> str:
         """Monta a mensagem no formato dos grupos de promoção do WhatsApp.
 
@@ -108,17 +120,20 @@ class WhatsAppChannel(BaseChannel):
             linhas.append(f"*Por: {preco_fmt} à vista*")
         linhas.append("")
 
-        cupom = (oferta.get("dados_extra") or {}).get("cupom", "")
+        cupom = oferta.get("cupom") or (oferta.get("dados_extra") or {}).get("cupom", "")
         if cupom:
+            linhas.append("⚡ *CUPOM RELÂMPAGO*")
             linhas.append(f"*Utilize o cupom: {cupom}*")
             linhas.append("_(o desconto entra na tela de pagamento)_")
+            if oferta.get("expira_em"):
+                linhas.append(f"_Expira em: {oferta['expira_em']}_")
             linhas.append("")
 
         if oferta.get("frete_gratis"):
             linhas.append("_Frete grátis para várias regiões, consulte seu CEP_")
             linhas.append("")
 
-        link = oferta.get("link_afiliado") or oferta.get("link_original", "")
+        link = self._link_rastreado(oferta)
         linhas.append(f"*{oferta.get('loja', 'Loja')}:*")
         if link:
             linhas.append(f"Compre em: {link}")

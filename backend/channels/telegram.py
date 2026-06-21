@@ -11,6 +11,7 @@ import html
 import requests
 from backend.channels.base import BaseChannel
 from backend.config import config
+from backend.monetization import gerar_link_afiliado
 
 
 class TelegramChannel(BaseChannel):
@@ -32,7 +33,7 @@ class TelegramChannel(BaseChannel):
 
         texto = self._montar_post(oferta)
         imagem_url = oferta.get("imagem_url")
-        link = oferta.get("link_afiliado") or oferta.get("link_original", "")
+        link = self._link_rastreado(oferta)
 
         try:
             if imagem_url:
@@ -46,6 +47,17 @@ class TelegramChannel(BaseChannel):
     def _esc(texto) -> str:
         """Escapa caracteres especiais de HTML (<, >, &) para o Telegram."""
         return html.escape(str(texto), quote=False)
+
+    def _link_rastreado(self, oferta: dict) -> str:
+        """Link de afiliado rastreado p/ o canal Telegram (TASK-12).
+
+        Usa o motor de monetização (TASK-10) com canal="telegram" + produto_id,
+        em vez do link cru — cada clique passa a ser atribuído ao canal.
+        """
+        base = oferta.get("link_afiliado") or oferta.get("link_original") or ""
+        if not base:
+            return ""
+        return gerar_link_afiliado(base, canal="telegram", produto_id=oferta.get("produto_id"))
 
     def _montar_post(self, oferta: dict) -> str:
         """Monta o texto do post em HTML (robusto a caracteres especiais)."""
@@ -88,10 +100,13 @@ class TelegramChannel(BaseChannel):
             linhas.append("🚚 <b>Frete Grátis!</b>")
             linhas.append("")
 
-        # Cupom
-        cupom = oferta.get("dados_extra", {}).get("cupom", "")
+        # Cupom relâmpago (TASK-09/12): cupom top-level ou em dados_extra.
+        cupom = oferta.get("cupom") or (oferta.get("dados_extra") or {}).get("cupom", "")
         if cupom:
+            linhas.append("⚡ <b>CUPOM RELÂMPAGO</b>")
             linhas.append(f"🎟️ <b>{self._esc(cupom)}</b>")
+            if oferta.get("expira_em"):
+                linhas.append(f"⏳ Expira em: {self._esc(oferta['expira_em'])}")
             linhas.append("")
 
         # Loja e link (link escapado)

@@ -77,9 +77,10 @@ def gerar_copy_oferta(oferta: dict) -> str:
     desconto = oferta.get("desconto_pct", 0)
     loja = oferta.get("loja", "Loja")
 
-    # Extrai o cupom e forma de pagamento se existir
+    # Extrai o cupom e forma de pagamento se existir.
+    # Cupom relâmpago pode vir top-level (TASK-09) ou em dados_extra (legado).
     dados_extra = oferta.get("dados_extra", {})
-    cupom = dados_extra.get("cupom", "")
+    cupom = oferta.get("cupom") or dados_extra.get("cupom", "")
     pagamento = dados_extra.get("forma_pagamento", "")
 
     # Cache: mesma oferta não re-chama o Gemini
