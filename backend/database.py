@@ -18,6 +18,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.engine import Engine
 
 from backend.config import config
+from backend.monetization import gerar_link_afiliado
 from backend.models import (
     Base,
     Configuracao,
@@ -82,6 +83,23 @@ def extrair_produto_id(link: str) -> str | None:
     if m:
         return f"shopee.{m.group(1)}.{m.group(2)}"
     return None
+
+
+def _gerar_afiliado_base(link_original: str) -> str | None:
+    """Link de afiliado base (canal padrão, sem rede) p/ gravar na ingestão.
+
+    Sem encurtar (scrape fica offline/rápido); os canais encurtam no envio.
+    Defensivo: qualquer falha do motor de monetização não quebra a coleta.
+    """
+    try:
+        return gerar_link_afiliado(
+            link_original,
+            produto_id=extrair_produto_id(link_original),
+            encurtar=False,
+        )
+    except Exception as e:  # nunca travar a ingestão por causa do tracking
+        print(f"[MONETIZACAO] link base falhou ({link_original}): {e}")
+        return None
 
 
 def _to_dict(obj) -> dict:
@@ -180,6 +198,9 @@ def criar_oferta(dados: dict) -> int:
             status=dados.get("status", "pendente"),
             fonte=dados.get("fonte", "manual"),
             dados_extra=dados.get("dados_extra") or None,
+            high_commission=bool(dados.get("high_commission", False)),
+            cupom=dados.get("cupom"),
+            expira_em=dados.get("expira_em"),
             departamento_id=dados.get("departamento_id"),
             produto_id=extrair_produto_id(dados.get("link_original")),
         )
@@ -221,6 +242,7 @@ _CAMPOS_OFERTA = (
     "titulo", "preco", "preco_original", "desconto_pct", "loja", "link_original",
     "link_afiliado", "imagem_url", "categoria", "vendedor", "reputacao",
     "frete_gratis", "status", "departamento_id",
+    "high_commission", "cupom", "expira_em",
 )
 
 
@@ -231,6 +253,8 @@ def atualizar_oferta(oferta_id: int, dados: dict) -> bool:
         return False
     if "frete_gratis" in campos:
         campos["frete_gratis"] = bool(campos["frete_gratis"])
+    if "high_commission" in campos:
+        campos["high_commission"] = bool(campos["high_commission"])
     with _Session() as s:
         oferta = s.get(Oferta, oferta_id)
         if oferta:
@@ -280,6 +304,10 @@ def coletar_e_salvar(ofertas: list[dict], fonte: str | None = None) -> list[dict
         dep_id = classificar_departamento(oferta.get("titulo", ""))
         if dep_id:
             oferta["departamento_id"] = dep_id
+        # Monetização (TASK-10): nenhum link entra sem rastreio. Gera o link de
+        # afiliado base (canal padrão) na ingestão; defensivo p/ nunca travar.
+        if not oferta.get("link_afiliado") and oferta.get("link_original"):
+            oferta["link_afiliado"] = _gerar_afiliado_base(oferta["link_original"])
         oferta["id"] = criar_oferta(oferta)
         registrar_preco(
             titulo=oferta.get("titulo", ""),
