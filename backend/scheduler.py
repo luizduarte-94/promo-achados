@@ -3,6 +3,8 @@
 Agendador de tarefas — busca automática de ofertas em intervalos configuráveis.
 """
 
+import json
+import logging
 import time
 from datetime import datetime
 
@@ -15,6 +17,26 @@ from backend.espelho import termos_do_espelho
 from backend import database as db
 from backend import precos
 from backend.config import config
+
+
+# --- Observabilidade: logs estruturados (JSON) dos jobs (TASK-08) ---
+logger = logging.getLogger("promo.jobs")
+if not logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(message)s"))  # a mensagem já é JSON
+    logger.addHandler(_handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+
+def _log(**campos):
+    """Emite uma linha de log estruturada (JSON) com timestamp."""
+    campos.setdefault("ts", datetime.now().isoformat(timespec="seconds"))
+    logger.info(json.dumps(campos, ensure_ascii=False, default=str))
+
+
+def _dur_ms(inicio: float) -> float:
+    return round((time.perf_counter() - inicio) * 1000, 1)
 
 
 scheduler = BackgroundScheduler()
@@ -51,17 +73,31 @@ def auto_postar():
         print("[AUTO-POST] Nenhuma oferta elegível (sem link afiliado ou score baixo).")
         return
 
+    inicio = time.perf_counter()
+    publicadas = puladas = erros = 0
     print(f"[AUTO-POST] Postando {len(candidatas)} oferta(s) no Telegram...")
     for oferta in candidatas:
         # Revalida o preço antes de postar — nunca divulga preço velho (igual ao manual).
         rev = precos.revalidar_preco(oferta)
         if rev["status"] in ("subiu", "sumiu"):
+            puladas += 1
+            _log(job_name="auto_post", evento="publicacao", canal="telegram",
+                 offer_id=oferta["id"], status="pulada", motivo=rev["status"])
             print(f"[AUTO-POST] #{oferta['id']} pulada (preço {rev['status']}).")
             continue
         resultado = telegram.enviar(oferta)
         db.registrar_postagem(oferta["id"], "telegram", resultado["sucesso"], resultado["resposta"])
+        if resultado["sucesso"]:
+            publicadas += 1
+        else:
+            erros += 1
+        _log(job_name="auto_post", evento="publicacao", canal="telegram",
+             offer_id=oferta["id"], status="ok" if resultado["sucesso"] else "erro")
         print(f"[AUTO-POST] #{oferta['id']} score={score_oferta(oferta)} -> {resultado['sucesso']}")
         time.sleep(config.PAUSA_ENTRE_POSTS)
+
+    _log(job_name="auto_post", status="erro" if erros else "ok", duration_ms=_dur_ms(inicio),
+         publicadas=publicadas, puladas=puladas, erros=erros)
 
 
 def tarefa_busca_automatica():
@@ -70,7 +106,9 @@ def tarefa_busca_automatica():
     print("[AGENDADOR] Iniciando busca automática...")
     print("=" * 50)
 
+    inicio = time.perf_counter()
     total_novas = 0
+    erros = 0
 
     # Mercado Livre
     try:
@@ -79,7 +117,12 @@ def tarefa_busca_automatica():
         db.registrar_busca("mercadolivre", "auto", len(resultados_ml))
         print(f"[ML] {len(resultados_ml)} encontradas, {novas_ml} novas")
         total_novas += novas_ml
+        _log(job_name="busca_automatica", evento="scrape", fonte="mercadolivre",
+             status="ok", encontradas=len(resultados_ml), capturadas=novas_ml)
     except Exception as e:
+        erros += 1
+        _log(job_name="busca_automatica", evento="scrape", fonte="mercadolivre",
+             status="erro", error=f"{type(e).__name__}: {e}")
         print(f"[ML] Erro na busca automática: {e}")
 
     # Shopee
@@ -90,21 +133,32 @@ def tarefa_busca_automatica():
             db.registrar_busca("shopee", "auto", len(resultados_sp))
             print(f"[SHOPEE] {len(resultados_sp)} encontradas, {novas_sp} novas")
             total_novas += novas_sp
+            _log(job_name="busca_automatica", evento="scrape", fonte="shopee",
+                 status="ok", encontradas=len(resultados_sp), capturadas=novas_sp)
         except Exception as e:
+            erros += 1
+            _log(job_name="busca_automatica", evento="scrape", fonte="shopee",
+                 status="erro", error=f"{type(e).__name__}: {e}")
             print(f"[SHOPEE] Erro na busca automática: {e}")
 
     # Espelho: grupos WhatsApp como sinal de tendência (no-op se ESPELHO_ENABLED=false)
     try:
         total_novas += buscar_do_espelho()
     except Exception as e:
+        erros += 1
+        _log(job_name="busca_automatica", evento="espelho", status="erro",
+             error=f"{type(e).__name__}: {e}")
         print(f"[ESPELHO] Erro: {e}")
 
     print(f"[AGENDADOR] Busca concluída. {total_novas} novas ofertas adicionadas.")
+    _log(job_name="busca_automatica", status="erro" if erros else "ok",
+         duration_ms=_dur_ms(inicio), capturadas=total_novas, erros=erros)
 
     # Auto-post (no-op se AUTO_POST_ENABLED=false)
     try:
         auto_postar()
     except Exception as e:
+        _log(job_name="auto_post", status="erro", error=f"{type(e).__name__}: {e}")
         print(f"[AUTO-POST] Erro: {e}")
 
     print("=" * 50 + "\n")
@@ -140,7 +194,10 @@ def monitorar_recorrentes():
         return
 
     print(f"[MONITOR] Checando {len(recorrentes)} produto(s) recorrente(s)...")
+    inicio = time.perf_counter()
+    checados = alertas = erros = 0
     for rec in recorrentes:
+        checados += 1
         try:
             resultados = ml_scraper.buscar(rec["titulo"], filtrar_qualidade=False)
             match = _casar_recorrente(rec, resultados)
@@ -193,13 +250,23 @@ def monitorar_recorrentes():
                     "dados_extra": match.get("dados_extra", {}),
                 }
                 resultado = telegram.enviar(oferta)
+                alertas += 1
                 motivo = "alvo" if bateu_alvo else "novo minimo"
+                _log(job_name="monitor_recorrentes", evento="alerta", canal="telegram",
+                     offer_id=rec["id"], status="ok" if resultado["sucesso"] else "erro",
+                     motivo=motivo, preco=preco_novo)
                 print(f"[MONITOR] #{rec['id']} BAIXOU ({motivo}) -> R${preco_novo} | telegram={resultado['sucesso']}")
                 time.sleep(config.PAUSA_ENTRE_POSTS)
             else:
                 print(f"[MONITOR] #{rec['id']} sem queda relevante (R${preco_novo})")
         except Exception as e:
+            erros += 1
+            _log(job_name="monitor_recorrentes", evento="check", offer_id=rec.get("id"),
+                 status="erro", error=f"{type(e).__name__}: {e}")
             print(f"[MONITOR] Erro no recorrente #{rec.get('id')}: {e}")
+
+    _log(job_name="monitor_recorrentes", status="erro" if erros else "ok",
+         duration_ms=_dur_ms(inicio), checados=checados, alertas=alertas, erros=erros)
 
 
 def buscar_do_espelho() -> int:
@@ -218,12 +285,15 @@ def buscar_do_espelho() -> int:
         return 0
 
     print(f"[ESPELHO] {len(termos)} termo(s) dos grupos: {termos}")
+    inicio = time.perf_counter()
     novas = 0
+    erros = 0
     for termo in termos:
         # Mercado Livre (já filtra desconto/preço por padrão)
         try:
             novas += len(db.coletar_e_salvar(ml_scraper.buscar(termo), fonte="espelho"))
         except Exception as e:
+            erros += 1
             print(f"[ESPELHO][ML] Erro em '{termo}': {e}")
 
         # Shopee (se houver credenciais)
@@ -231,10 +301,13 @@ def buscar_do_espelho() -> int:
             try:
                 novas += len(db.coletar_e_salvar(shopee_scraper.buscar(termo), fonte="espelho"))
             except Exception as e:
+                erros += 1
                 print(f"[ESPELHO][SHOPEE] Erro em '{termo}': {e}")
 
     db.registrar_busca("espelho", ", ".join(termos)[:200], novas)
     print(f"[ESPELHO] {novas} nova(s) oferta(s) a partir dos grupos.")
+    _log(job_name="espelho", fonte="espelho", status="erro" if erros else "ok",
+         duration_ms=_dur_ms(inicio), termos=len(termos), capturadas=novas, erros=erros)
     return novas
 
 
