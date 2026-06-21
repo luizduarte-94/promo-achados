@@ -27,10 +27,11 @@ def db_postgres():
     """Reaponta a camada de dados para o Postgres real e restaura no fim."""
     from backend import database as db
 
+    anterior = str(db.get_engine().url)   # SQLite de teste configurado no conftest
     db.reconfigurar(config.DATABASE_URL)
     db.init_db()
     yield db
-    db.reconfigurar(f"sqlite:///{config.DB_PATH}")  # volta para o SQLite de teste
+    db.reconfigurar(anterior)             # restaura exatamente o que estava antes
 
 
 def test_job_busca_automatica_grava_no_postgres(db_postgres, monkeypatch):

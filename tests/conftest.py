@@ -1,35 +1,32 @@
 # -*- coding: utf-8 -*-
-"""Configuração dos testes: força SQLite num arquivo temporário e cria o schema.
+"""Configuração dos testes: banco SQLite temporário e isolado.
 
-Definido ANTES de qualquer import do backend para que backend.config leia as
-variáveis. Mantém os testes offline (sem precisar de um Postgres no ar) e
-isolados do banco real (promo_achados.db).
+Usa db.reconfigurar() (seam da TASK-06) para apontar a camada de dados a um
+SQLite temporário ÚNICO por sessão — isolando os testes do banco real e do
+Postgres, sem depender de config.DB_PATH/SQLITE_PATH. Mantém a suíte offline.
 """
 
 import os
 import pathlib
+import shutil
 import tempfile
 
 os.environ.setdefault("USE_SQLITE", "true")
-os.environ.setdefault(
-    "SQLITE_PATH", str(pathlib.Path(tempfile.gettempdir()) / "promo_achados_test.db")
-)
 
 import pytest  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _preparar_banco_de_teste():
-    """Cria um SQLite limpo (schema ORM) para a sessão de testes e remove no fim."""
-    caminho = pathlib.Path(os.environ["SQLITE_PATH"])
-    if caminho.exists():
-        caminho.unlink()
-
+def _banco_de_teste():
+    """Cria um SQLite temporário (schema ORM) p/ a sessão e remove no fim."""
     from backend import database as db
 
+    tmpdir = tempfile.mkdtemp(prefix="promo_test_")
+    caminho = pathlib.Path(tmpdir) / "test.db"
+    db.reconfigurar(f"sqlite:///{caminho}")
     db.init_db()
     yield
     try:
-        caminho.unlink()
+        shutil.rmtree(tmpdir, ignore_errors=True)
     except OSError:
         pass
