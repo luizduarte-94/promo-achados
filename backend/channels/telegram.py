@@ -11,7 +11,7 @@ import html
 import requests
 from backend.channels.base import BaseChannel
 from backend.config import config
-from backend.monetization import gerar_link_afiliado
+from backend.analytics import montar_link_redirect
 
 
 class TelegramChannel(BaseChannel):
@@ -49,15 +49,16 @@ class TelegramChannel(BaseChannel):
         return html.escape(str(texto), quote=False)
 
     def _link_rastreado(self, oferta: dict) -> str:
-        """Link de afiliado rastreado p/ o canal Telegram (TASK-12).
+        """Link curto do redirecionador próprio /r/{id}?c=telegram (TASK-15).
 
-        Usa o motor de monetização (TASK-10) com canal="telegram" + produto_id,
-        em vez do link cru — cada clique passa a ser atribuído ao canal.
+        Em vez do link de afiliado direto, manda o usuário ao nosso /r/, que
+        registra o clique e faz o 302 para a URL real (resolvida nos bastidores).
+        Sem id (oferta ad-hoc), cai no link de afiliado/original já existente.
         """
-        base = oferta.get("link_afiliado") or oferta.get("link_original") or ""
-        if not base:
-            return ""
-        return gerar_link_afiliado(base, canal="telegram", produto_id=oferta.get("produto_id"))
+        oid = oferta.get("id")
+        if oid:
+            return montar_link_redirect(oid, self.nome)
+        return oferta.get("link_afiliado") or oferta.get("link_original") or ""
 
     def _montar_post(self, oferta: dict) -> str:
         """Monta o texto do post em HTML (robusto a caracteres especiais)."""
