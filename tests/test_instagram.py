@@ -49,6 +49,7 @@ def ig(monkeypatch):
 
 
 OFERTA = {
+    "id": 77,
     "titulo": "Fone Bluetooth Pro",
     "preco": 99.9,
     "preco_original": 199.9,
@@ -82,16 +83,14 @@ def test_enviar_delega_para_feed(ig):
     assert any(c["url"].endswith("/media_publish") for c in chamadas)
 
 
-def test_publicar_story_anexa_link_afiliado_rastreado(ig, monkeypatch):
+def test_publicar_story_anexa_link_redirect(ig):
     canal, chamadas = ig
-    monkeypatch.setattr(config, "AFILIADO_ENCURTAR_SHOPEE", False)  # sem rede de shortlink
     res = canal.publicar_story(OFERTA)
     assert res["sucesso"] is True
     container = chamadas[0]["data"]
     assert container["media_type"] == "STORIES"
-    # link sticker -> link de afiliado rastreado p/ canal instagram
-    assert "utm_source=instagram" in container["link"]
-    assert "sub_id=instagram_shopee1122" in container["link"]
+    # link sticker -> redirecionador próprio /r/{id}?c=instagram (TASK-15)
+    assert "/r/77?c=instagram" in container["link"]
     assert res["link_afiliado"] == container["link"]
 
 

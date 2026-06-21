@@ -24,10 +24,11 @@ TABELAS_ESPERADAS = {
     "departamentos",
     "historico_precos",
     "produtos_recorrentes",
+    "click_events",
 }
 
 
-def test_metadata_tem_as_7_tabelas():
+def test_metadata_tem_todas_as_tabelas():
     assert set(Base.metadata.tables) == TABELAS_ESPERADAS
 
 

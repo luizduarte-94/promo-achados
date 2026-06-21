@@ -18,7 +18,7 @@ import time
 import requests
 from backend.channels.base import BaseChannel
 from backend.config import config
-from backend.monetization import gerar_link_afiliado
+from backend.analytics import montar_link_redirect
 from backend.templates.instagram_captions import caption_feed, caption_carrossel
 
 
@@ -141,11 +141,15 @@ class InstagramChannel(BaseChannel):
     # =============================================
 
     def _link_afiliado(self, oferta: dict) -> str:
-        """Link de afiliado rastreado p/ o canal Instagram (importado da monetização)."""
-        url = oferta.get("link_afiliado") or oferta.get("link_original") or ""
-        if not url:
-            return ""
-        return gerar_link_afiliado(url, canal="instagram", produto_id=oferta.get("produto_id"))
+        """Link curto do redirecionador próprio /r/{id}?c=instagram (TASK-15).
+
+        O link sticker do Story passa pelo nosso /r/ (registra o clique + 302
+        para a URL real). Sem id, cai no link de afiliado/original existente.
+        """
+        oid = oferta.get("id")
+        if oid:
+            return montar_link_redirect(oid, self.nome)
+        return oferta.get("link_afiliado") or oferta.get("link_original") or ""
 
     def _checar_pronto(self, imagem_url) -> dict | None:
         """Pré-condições comuns: configurado + tem imagem. None se OK."""
