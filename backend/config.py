@@ -62,6 +62,13 @@ class Config:
     # Linktree/landing com todos os teus links (aparece no rodapé das mensagens).
     LINKTREE_URL: str = os.getenv("LINKTREE_URL", "")
 
+    # --- Analytics / Redirect interno (TASK-14/15) ---
+    # Base pública do redirecionador /r/{id}. Os canais usam esse domínio no link
+    # curto (ex.: https://api.promoachados.com/r/123?c=telegram). Em dev, localhost.
+    REDIRECT_BASE_URL: str = os.getenv("REDIRECT_BASE_URL", "http://localhost:8000").rstrip("/")
+    # Salt p/ hash de IP no log de cliques (LGPD: não guardamos IP em claro).
+    CLICK_IP_SALT: str = os.getenv("CLICK_IP_SALT", "promo-achados")
+
     # --- Monetização / Tracking (TASK-10) ---
     # Parâmetros injetados em TODO link de afiliado para atribuir clique por canal.
     UTM_CAMPAIGN: str = os.getenv("UTM_CAMPAIGN", "promoachados")

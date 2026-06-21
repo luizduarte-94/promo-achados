@@ -16,12 +16,13 @@ import base64
 import contextlib
 import os
 import secrets
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend import database as db
+from backend.analytics.tracking import registrar_clique, resolver_destino
 from backend.api.routes import router as api_router
 from backend.config import config
 
@@ -82,6 +83,10 @@ async def autenticacao_basica(request: Request, call_next):
     constante (secrets.compare_digest) para evitar timing attack.
     AVISO: Basic Auth só é seguro sobre HTTPS — em produção, ponha atrás de TLS.
     """
+    # O redirecionador /r/ é PÚBLICO (clique do usuário final) — fora do Basic Auth.
+    if request.url.path.startswith("/r/"):
+        return await call_next(request)
+
     if config.PANEL_PASSWORD and request.method != "OPTIONS":
         auth = request.headers.get("Authorization", "")
         autorizado = False
@@ -107,6 +112,26 @@ app.include_router(api_router)
 # Serve frontend
 app.mount("/css", StaticFiles(directory=str(config.FRONTEND_DIR / "css")), name="css")
 app.mount("/js", StaticFiles(directory=str(config.FRONTEND_DIR / "js")), name="js")
+
+
+@app.get("/r/{oferta_id}")
+def redirect_oferta(oferta_id: int, request: Request, background: BackgroundTasks, c: str = "site"):
+    """Redirecionador interno de cliques (TASK-14).
+
+    Registra o clique em background (não bloqueia) e responde 302 para a URL de
+    afiliado resolvida nos bastidores. Rota pública (isenta de Basic Auth).
+    """
+    oferta = db.obter_oferta(oferta_id)
+    if not oferta:
+        raise HTTPException(status_code=404, detail="Oferta não encontrada")
+
+    destino = resolver_destino(oferta, c)
+    if not destino:
+        raise HTTPException(status_code=404, detail="Oferta sem link para redirecionar")
+
+    ip = request.client.host if request.client else None
+    background.add_task(registrar_clique, oferta_id, c, ip)
+    return RedirectResponse(url=destino, status_code=302)
 
 
 @app.get("/")
