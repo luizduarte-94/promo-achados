@@ -1,14 +1,71 @@
 # -*- coding: utf-8 -*-
 """
-Banco de dados SQLite — modelos e operações.
+Acesso a dados — PostgreSQL por padrão, SQLite como fallback (TASK-04).
+
+A "virada de chave": as operações agora rodam sobre a camada ORM
+(backend/models.py), escolhendo o banco por DATABASE_URL (Postgres) ou, se
+USE_SQLITE=true, o SQLite legado. As ASSINATURAS e os FORMATOS de retorno das
+funções públicas continuam idênticos (mesmos dicts/chaves), para não quebrar
+quem consome (routes, scheduler, precos).
 """
 
-import sqlite3
-import json
-import re
-from datetime import datetime
-from backend.config import config
+from __future__ import annotations
 
+import re
+from datetime import date, datetime
+
+from sqlalchemy import delete, func, select
+from sqlalchemy.engine import Engine
+
+from backend.config import config
+from backend.models import (
+    Base,
+    Configuracao,
+    Departamento,
+    HistoricoBusca,
+    HistoricoPreco,
+    Oferta,
+    Postagem,
+    ProdutoRecorrente,
+    criar_engine,
+    criar_session_factory,
+)
+
+
+# =============================================
+# ENGINE / SESSÃO (Postgres padrão; SQLite se USE_SQLITE=true)
+# =============================================
+
+def _db_url() -> str:
+    if config.USE_SQLITE:
+        return f"sqlite:///{config.DB_PATH}"
+    return config.DATABASE_URL
+
+
+_engine: Engine = criar_engine(_db_url())
+_Session = criar_session_factory(_engine)
+
+
+def get_engine() -> Engine:
+    """Engine atual (Postgres ou SQLite conforme config)."""
+    return _engine
+
+
+def reconfigurar(url: str) -> None:
+    """Reaponta o banco em runtime (usado por testes p/ alternar SQLite/Postgres)."""
+    global _engine, _Session
+    _engine = criar_engine(url)
+    _Session = criar_session_factory(_engine)
+
+
+def _get_conn():
+    """Conexão DBAPI bruta (compat com scripts/testes). Prefira as funções públicas."""
+    return _engine.raw_connection()
+
+
+# =============================================
+# HELPERS
+# =============================================
 
 def extrair_produto_id(link: str) -> str | None:
     """Extrai um ID canônico do produto a partir do link (para dedup robusto).
@@ -27,355 +84,192 @@ def extrair_produto_id(link: str) -> str | None:
     return None
 
 
-def _get_conn() -> sqlite3.Connection:
-    """Retorna conexão com row_factory configurada."""
-    conn = sqlite3.connect(str(config.DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+def _to_dict(obj) -> dict:
+    """Modelo -> dict com todas as colunas (mesmas chaves do schema)."""
+    return {c.name: getattr(obj, c.name) for c in obj.__table__.columns}
+
+
+def _oferta_dict(oferta: Oferta, dep_nome=None, dep_emoji=None) -> dict:
+    """Serializa Oferta preservando o contrato antigo (dados_extra dict + dep_*)."""
+    d = _to_dict(oferta)
+    d["dados_extra"] = oferta.dados_extra if isinstance(oferta.dados_extra, dict) else {}
+    d["departamento_nome"] = dep_nome
+    d["departamento_emoji"] = dep_emoji
+    return d
+
+
+_DEPARTAMENTOS_PADRAO = [
+    (
+        "Fitness & Academia",
+        "💪",
+        "creatina,whey,whey protein,proteina,albumina,bcaa,glutamina,pre treino,barra proteica,academia,suplemento,maltodextrina,amendoim,pasta de amendoim,dr peanut",
+    ),
+    (
+        "Bebê & Fraldas",
+        "🍼",
+        "fralda,fraldas,pampers,huggies,lenco umedecido,pomada assadura,bebe,mamadeira,infantil",
+    ),
+    (
+        "Saúde & Beleza",
+        "💄",
+        "Hidratantes,oleo,oleo corporal,protetor solar,shampoo,condicionador,perfume,maquiagem,skincare,hidratante,creme,cabelo,desodorante,sabonete,serum,hidratantes",
+    ),
+    (
+        "Eletrônicos",
+        "📱",
+        "notebook,fone,fone de ouvido,fone bluetooth,buds,airpods,headphone,headset,smart tv,tv,qled,oled,tablet,smartwatch,celular,smartphone,monitor,ssd,mouse,teclado,carregador,powerbank,caixa de som",
+    ),
+    (
+        "Casa & Limpeza",
+        "🏠",
+        "detergente,amaciante,papel higienico,aspirador,panela,limpeza,organizador,vassoura,esponja",
+    ),
+    (
+        "Games",
+        "🎮",
+        "playstation,xbox,nintendo,controle,jogo,headset gamer,cadeira gamer,console,gamer",
+    ),
+    (
+        "Moda & Acessórios",
+        "👗",
+        "tenis,roupa,camisa,camiseta,relogio,bolsa,oculos,jaqueta,calca,vestido",
+    ),
+    (
+        "Alimentos & Bebidas",
+        "🍕",
+        "cafe,chocolate,biscoito,cerveja,vinho,leite,cereal,tahine,manteiga,azeite,achocolatado",
+    ),
+]
 
 
 def init_db():
-    """Cria as tabelas se não existirem."""
-    conn = _get_conn()
-    conn.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS ofertas (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            titulo          TEXT NOT NULL,
-            preco           REAL NOT NULL,
-            preco_original  REAL,
-            desconto_pct    REAL DEFAULT 0,
-            loja            TEXT NOT NULL DEFAULT 'Mercado Livre',
-            link_original   TEXT,
-            link_afiliado   TEXT,
-            imagem_url      TEXT,
-            categoria       TEXT,
-            vendedor        TEXT,
-            reputacao       TEXT,
-            frete_gratis    INTEGER DEFAULT 0,
-            status          TEXT DEFAULT 'pendente',
-            fonte           TEXT DEFAULT 'manual',
-            dados_extra     TEXT,
-            departamento_id INTEGER,
-            criado_em       TEXT DEFAULT (datetime('now', 'localtime')),
-            atualizado_em   TEXT DEFAULT (datetime('now', 'localtime')),
-            FOREIGN KEY (departamento_id) REFERENCES departamentos(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS postagens (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            oferta_id   INTEGER NOT NULL,
-            canal       TEXT NOT NULL,
-            sucesso     INTEGER DEFAULT 0,
-            resposta    TEXT,
-            postado_em  TEXT DEFAULT (datetime('now', 'localtime')),
-            FOREIGN KEY (oferta_id) REFERENCES ofertas(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS configuracoes (
-            chave   TEXT PRIMARY KEY,
-            valor   TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS historico_buscas (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            fonte           TEXT NOT NULL,
-            palavra_chave   TEXT,
-            qtd_resultados  INTEGER DEFAULT 0,
-            buscado_em      TEXT DEFAULT (datetime('now', 'localtime'))
-        );
-
-        -- NOVOS: Departamentos
-        CREATE TABLE IF NOT EXISTS departamentos (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome            TEXT NOT NULL UNIQUE,
-            emoji           TEXT DEFAULT '📦',
-            palavras_chave  TEXT,
-            ativo           INTEGER DEFAULT 1,
-            criado_em       TEXT DEFAULT (datetime('now', 'localtime'))
-        );
-
-        -- NOVOS: Histórico de Preços (rastreamento ao longo do tempo)
-        CREATE TABLE IF NOT EXISTS historico_precos (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            titulo          TEXT NOT NULL,
-            link_original   TEXT,
-            loja            TEXT,
-            preco           REAL NOT NULL,
-            preco_original  REAL,
-            departamento_id INTEGER,
-            registrado_em   TEXT DEFAULT (datetime('now', 'localtime')),
-            FOREIGN KEY (departamento_id) REFERENCES departamentos(id)
-        );
-
-        -- NOVOS: Produtos Recorrentes (monitoramento contínuo de best sellers)
-        CREATE TABLE IF NOT EXISTS produtos_recorrentes (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            titulo          TEXT NOT NULL,
-            link_original   TEXT,
-            loja            TEXT DEFAULT 'Mercado Livre',
-            preco_alvo      REAL,
-            preco_atual     REAL,
-            preco_minimo    REAL,
-            departamento_id INTEGER,
-            ativo           INTEGER DEFAULT 1,
-            ultimo_check    TEXT,
-            criado_em       TEXT DEFAULT (datetime('now', 'localtime')),
-            FOREIGN KEY (departamento_id) REFERENCES departamentos(id)
-        );
-    """
-    )
-
-    # Migração: adicionar coluna departamento_id se não existir
-    try:
-        conn.execute("SELECT departamento_id FROM ofertas LIMIT 1")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE ofertas ADD COLUMN departamento_id INTEGER")
-
-    # Migração: adicionar coluna produto_id (ID canônico para dedup robusto)
-    try:
-        conn.execute("SELECT produto_id FROM ofertas LIMIT 1")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE ofertas ADD COLUMN produto_id TEXT")
-
-    # Inserir departamentos padrão se a tabela estiver vazia
-    count = conn.execute("SELECT COUNT(*) FROM departamentos").fetchone()[0]
-    if count == 0:
-        departamentos_padrao = [
-            (
-                "Fitness & Academia",
-                "💪",
-                "creatina,whey,whey protein,proteina,albumina,bcaa,glutamina,pre treino,barra proteica,academia,suplemento,maltodextrina,amendoim,pasta de amendoim,dr peanut",
-            ),
-            (
-                "Bebê & Fraldas",
-                "🍼",
-                "fralda,fraldas,pampers,huggies,lenco umedecido,pomada assadura,bebe,mamadeira,infantil",
-            ),
-            (
-                "Saúde & Beleza",
-                "💄",
-                "Hidratantes,oleo,oleo corporal,protetor solar,shampoo,condicionador,perfume,maquiagem,skincare,hidratante,creme,cabelo,desodorante,sabonete,serum,hidratantes",
-            ),
-            (
-                "Eletrônicos",
-                "📱",
-                "notebook,fone,fone de ouvido,fone bluetooth,buds,airpods,headphone,headset,smart tv,tv,qled,oled,tablet,smartwatch,celular,smartphone,monitor,ssd,mouse,teclado,carregador,powerbank,caixa de som",
-            ),
-            (
-                "Casa & Limpeza",
-                "🏠",
-                "detergente,amaciante,papel higienico,aspirador,panela,limpeza,organizador,vassoura,esponja",
-            ),
-            (
-                "Games",
-                "🎮",
-                "playstation,xbox,nintendo,controle,jogo,headset gamer,cadeira gamer,console,gamer",
-            ),
-            (
-                "Moda & Acessórios",
-                "👗",
-                "tenis,roupa,camisa,camiseta,relogio,bolsa,oculos,jaqueta,calca,vestido",
-            ),
-            (
-                "Alimentos & Bebidas",
-                "🍕",
-                "cafe,chocolate,biscoito,cerveja,vinho,leite,cereal,tahine,manteiga,azeite,achocolatado",
-            ),
-        ]
-        conn.executemany(
-            "INSERT INTO departamentos (nome, emoji, palavras_chave) VALUES (?, ?, ?)",
-            departamentos_padrao,
-        )
-
-    conn.commit()
-    conn.close()
+    """Cria as tabelas (create_all) e semeia os departamentos padrão se vazio."""
+    Base.metadata.create_all(_engine)
+    with _Session() as s:
+        if s.scalar(select(func.count()).select_from(Departamento)) == 0:
+            s.add_all(
+                Departamento(nome=n, emoji=e, palavras_chave=k)
+                for n, e, k in _DEPARTAMENTOS_PADRAO
+            )
+            s.commit()
 
 
 # =============================================
 # OFERTAS
 # =============================================
 
-
 def criar_oferta(dados: dict) -> int:
     """Insere uma oferta e retorna o ID."""
-    # Classificação automática de departamento se não informado
     if not dados.get("departamento_id") and dados.get("titulo"):
         dados = {**dados, "departamento_id": classificar_departamento(dados["titulo"])}
 
-    conn = _get_conn()
-    cur = conn.execute(
-        """
-        INSERT INTO ofertas (titulo, preco, preco_original, desconto_pct, loja,
-                             link_original, link_afiliado, imagem_url, categoria,
-                             vendedor, reputacao, frete_gratis, status, fonte, dados_extra,
-                             departamento_id, produto_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """,
-        (
-            dados.get("titulo", ""),
-            dados.get("preco", 0),
-            dados.get("preco_original"),
-            dados.get("desconto_pct", 0),
-            dados.get("loja", "Mercado Livre"),
-            dados.get("link_original"),
-            dados.get("link_afiliado"),
-            dados.get("imagem_url"),
-            dados.get("categoria"),
-            dados.get("vendedor"),
-            dados.get("reputacao"),
-            dados.get("frete_gratis", 0),
-            dados.get("status", "pendente"),
-            dados.get("fonte", "manual"),
-            json.dumps(dados.get("dados_extra")) if dados.get("dados_extra") else None,
-            dados.get("departamento_id"),
-            extrair_produto_id(dados.get("link_original")),
-        ),
-    )
-    conn.commit()
-    oferta_id = cur.lastrowid
-    conn.close()
-    return oferta_id
+    with _Session() as s:
+        oferta = Oferta(
+            titulo=dados.get("titulo", ""),
+            preco=dados.get("preco", 0),
+            preco_original=dados.get("preco_original"),
+            desconto_pct=dados.get("desconto_pct", 0),
+            loja=dados.get("loja", "Mercado Livre"),
+            link_original=dados.get("link_original"),
+            link_afiliado=dados.get("link_afiliado"),
+            imagem_url=dados.get("imagem_url"),
+            categoria=dados.get("categoria"),
+            vendedor=dados.get("vendedor"),
+            reputacao=dados.get("reputacao"),
+            frete_gratis=bool(dados.get("frete_gratis", False)),
+            status=dados.get("status", "pendente"),
+            fonte=dados.get("fonte", "manual"),
+            dados_extra=dados.get("dados_extra") or None,
+            departamento_id=dados.get("departamento_id"),
+            produto_id=extrair_produto_id(dados.get("link_original")),
+        )
+        s.add(oferta)
+        s.commit()
+        return oferta.id
 
 
-def _parse_row(row: sqlite3.Row) -> dict:
-    d = dict(row)
-    if d.get("dados_extra"):
-        try:
-            d["dados_extra"] = json.loads(d["dados_extra"])
-        except json.JSONDecodeError:
-            d["dados_extra"] = {}
-    else:
-        d["dados_extra"] = {}
-    return d
-
-
-def listar_ofertas(
-    status: str = None, loja: str = None, limite: int = 100
-) -> list[dict]:
-    """Lista ofertas com filtros opcionais."""
-    conn = _get_conn()
-    query = """
-        SELECT o.*, d.nome AS departamento_nome, d.emoji AS departamento_emoji
-        FROM ofertas o
-        LEFT JOIN departamentos d ON o.departamento_id = d.id
-        WHERE 1=1
-    """
-    params = []
-
-    if status:
-        query += " AND o.status = ?"
-        params.append(status)
-    if loja:
-        query += " AND o.loja = ?"
-        params.append(loja)
-
-    query += " ORDER BY o.criado_em DESC LIMIT ?"
-    params.append(limite)
-
-    rows = conn.execute(query, params).fetchall()
-    conn.close()
-    return [_parse_row(r) for r in rows]
+def listar_ofertas(status: str = None, loja: str = None, limite: int = 100) -> list[dict]:
+    """Lista ofertas com filtros opcionais (inclui nome/emoji do departamento)."""
+    with _Session() as s:
+        stmt = select(Oferta, Departamento.nome, Departamento.emoji).join(
+            Departamento, Oferta.departamento_id == Departamento.id, isouter=True
+        )
+        if status:
+            stmt = stmt.where(Oferta.status == status)
+        if loja:
+            stmt = stmt.where(Oferta.loja == loja)
+        stmt = stmt.order_by(Oferta.criado_em.desc()).limit(limite)
+        return [_oferta_dict(o, nome, emoji) for o, nome, emoji in s.execute(stmt).all()]
 
 
 def obter_oferta(oferta_id: int) -> dict | None:
-    """Retorna uma oferta pelo ID."""
-    conn = _get_conn()
-    row = conn.execute(
-        """
-        SELECT o.*, d.nome AS departamento_nome, d.emoji AS departamento_emoji
-        FROM ofertas o
-        LEFT JOIN departamentos d ON o.departamento_id = d.id
-        WHERE o.id = ?
-    """,
-        (oferta_id,),
-    ).fetchone()
-    conn.close()
-    return _parse_row(row) if row else None
+    """Retorna uma oferta pelo ID (com nome/emoji do departamento)."""
+    with _Session() as s:
+        stmt = (
+            select(Oferta, Departamento.nome, Departamento.emoji)
+            .join(Departamento, Oferta.departamento_id == Departamento.id, isouter=True)
+            .where(Oferta.id == oferta_id)
+        )
+        linha = s.execute(stmt).first()
+        if not linha:
+            return None
+        oferta, nome, emoji = linha
+        return _oferta_dict(oferta, nome, emoji)
+
+
+_CAMPOS_OFERTA = (
+    "titulo", "preco", "preco_original", "desconto_pct", "loja", "link_original",
+    "link_afiliado", "imagem_url", "categoria", "vendedor", "reputacao",
+    "frete_gratis", "status", "departamento_id",
+)
 
 
 def atualizar_oferta(oferta_id: int, dados: dict) -> bool:
-    """Atualiza campos de uma oferta."""
-    conn = _get_conn()
-    campos = []
-    valores = []
-    for chave in (
-        "titulo",
-        "preco",
-        "preco_original",
-        "desconto_pct",
-        "loja",
-        "link_original",
-        "link_afiliado",
-        "imagem_url",
-        "categoria",
-        "vendedor",
-        "reputacao",
-        "frete_gratis",
-        "status",
-        "departamento_id",
-    ):
-        if chave in dados:
-            campos.append(f"{chave} = ?")
-            valores.append(dados[chave])
-
+    """Atualiza campos de uma oferta. Retorna False se não houver campos válidos."""
+    campos = {k: dados[k] for k in _CAMPOS_OFERTA if k in dados}
     if not campos:
-        conn.close()
         return False
-
-    campos.append("atualizado_em = datetime('now', 'localtime')")
-    valores.append(oferta_id)
-
-    conn.execute(f"UPDATE ofertas SET {', '.join(campos)} WHERE id = ?", valores)
-    conn.commit()
-    conn.close()
+    if "frete_gratis" in campos:
+        campos["frete_gratis"] = bool(campos["frete_gratis"])
+    with _Session() as s:
+        oferta = s.get(Oferta, oferta_id)
+        if oferta:
+            for chave, valor in campos.items():
+                setattr(oferta, chave, valor)
+            oferta.atualizado_em = datetime.now()
+            s.commit()
     return True
 
 
 def deletar_oferta(oferta_id: int) -> bool:
-    """Remove uma oferta."""
-    conn = _get_conn()
-    cur = conn.execute("DELETE FROM ofertas WHERE id = ?", (oferta_id,))
-    conn.commit()
-    conn.close()
-    return cur.rowcount > 0
+    """Remove uma oferta (e suas postagens)."""
+    with _Session() as s:
+        oferta = s.get(Oferta, oferta_id)
+        if not oferta:
+            return False
+        s.execute(delete(Postagem).where(Postagem.oferta_id == oferta_id))
+        s.delete(oferta)
+        s.commit()
+        return True
 
 
 def oferta_existe(link_original: str) -> bool:
-    """Verifica se já existe oferta com este produto (evita duplicatas).
-
-    Usa o ID canônico do produto quando extraível (robusto a variações de URL);
-    cai para comparação de link exato quando não há ID.
-    """
-    conn = _get_conn()
+    """Verifica se já existe oferta com este produto (dedup por ID canônico)."""
     produto_id = extrair_produto_id(link_original)
-    if produto_id:
-        row = conn.execute(
-            "SELECT id FROM ofertas WHERE produto_id = ?", (produto_id,)
-        ).fetchone()
-    else:
-        row = conn.execute(
-            "SELECT id FROM ofertas WHERE link_original = ?", (link_original,)
-        ).fetchone()
-    conn.close()
-    return row is not None
+    with _Session() as s:
+        if produto_id:
+            stmt = select(Oferta.id).where(Oferta.produto_id == produto_id).limit(1)
+        else:
+            stmt = select(Oferta.id).where(Oferta.link_original == link_original).limit(1)
+        return s.scalar(stmt) is not None
 
 
 def coletar_e_salvar(ofertas: list[dict], fonte: str | None = None) -> list[dict]:
-    """Salva uma leva de ofertas brutas (de scraper) com o mesmo pipeline em todo lugar.
+    """Salva uma leva de ofertas brutas com o mesmo pipeline em todo lugar.
 
     Para cada oferta: pula duplicata, classifica departamento, cria no banco e
-    registra o preço no histórico. Usado por busca manual, busca automática e
-    espelho — fonte única para não divergir (ex.: Shopee esquecer o histórico).
-
-    Args:
-        ofertas: lista de dicts no formato do scraper.
-        fonte: se informado, sobrescreve o campo 'fonte' de cada oferta.
-
-    Returns:
-        Lista das ofertas novas criadas (com 'id' e 'departamento_id' preenchidos).
+    registra o preço no histórico. Fonte única usada por busca manual,
+    automática e espelho.
     """
     novas: list[dict] = []
     for oferta in ofertas:
@@ -403,83 +297,70 @@ def coletar_e_salvar(ofertas: list[dict], fonte: str | None = None) -> list[dict
 # POSTAGENS
 # =============================================
 
-
 def registrar_postagem(oferta_id: int, canal: str, sucesso: bool, resposta: str = None):
-    """Registra uma postagem feita."""
-    conn = _get_conn()
-    conn.execute(
-        """
-        INSERT INTO postagens (oferta_id, canal, sucesso, resposta)
-        VALUES (?, ?, ?, ?)
-    """,
-        (oferta_id, canal, int(sucesso), resposta),
-    )
-
-    if sucesso:
-        conn.execute(
-            "UPDATE ofertas SET status = 'postada', atualizado_em = datetime('now', 'localtime') WHERE id = ?",
-            (oferta_id,),
-        )
-
-    conn.commit()
-    conn.close()
+    """Registra uma postagem feita; marca a oferta como 'postada' se sucesso."""
+    with _Session() as s:
+        s.add(Postagem(oferta_id=oferta_id, canal=canal, sucesso=bool(sucesso), resposta=resposta))
+        if sucesso:
+            oferta = s.get(Oferta, oferta_id)
+            if oferta:
+                oferta.status = "postada"
+                oferta.atualizado_em = datetime.now()
+        s.commit()
 
 
 def listar_postagens(limite: int = 50) -> list[dict]:
-    """Lista postagens recentes com dados da oferta."""
-    conn = _get_conn()
-    rows = conn.execute(
-        """
-        SELECT p.*, o.titulo, o.loja, o.preco
-        FROM postagens p
-        JOIN ofertas o ON p.oferta_id = o.id
-        ORDER BY p.postado_em DESC
-        LIMIT ?
-    """,
-        (limite,),
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    """Lista postagens recentes com dados da oferta (titulo/loja/preco)."""
+    with _Session() as s:
+        stmt = (
+            select(Postagem, Oferta.titulo, Oferta.loja, Oferta.preco)
+            .join(Oferta, Postagem.oferta_id == Oferta.id)
+            .order_by(Postagem.postado_em.desc())
+            .limit(limite)
+        )
+        saida = []
+        for postagem, titulo, loja, preco in s.execute(stmt).all():
+            d = _to_dict(postagem)
+            d["titulo"] = titulo
+            d["loja"] = loja
+            d["preco"] = preco
+            saida.append(d)
+        return saida
 
 
 # =============================================
 # ESTATÍSTICAS
 # =============================================
 
-
 def obter_stats() -> dict:
     """Estatísticas para o dashboard."""
-    conn = _get_conn()
-
-    total = conn.execute("SELECT COUNT(*) FROM ofertas").fetchone()[0]
-    pendentes = conn.execute(
-        "SELECT COUNT(*) FROM ofertas WHERE status = 'pendente'"
-    ).fetchone()[0]
-    postadas = conn.execute(
-        "SELECT COUNT(*) FROM ofertas WHERE status = 'postada'"
-    ).fetchone()[0]
-
-    hoje = datetime.now().strftime("%Y-%m-%d")
-    postadas_hoje = conn.execute(
-        "SELECT COUNT(*) FROM postagens WHERE postado_em LIKE ?", (f"{hoje}%",)
-    ).fetchone()[0]
-
-    desconto_medio = conn.execute(
-        "SELECT COALESCE(AVG(desconto_pct), 0) FROM ofertas WHERE desconto_pct > 0"
-    ).fetchone()[0]
-
-    buscas_hoje = conn.execute(
-        "SELECT COUNT(*) FROM historico_buscas WHERE buscado_em LIKE ?", (f"{hoje}%",)
-    ).fetchone()[0]
-
-    conn.close()
+    inicio_hoje = datetime.combine(date.today(), datetime.min.time())
+    with _Session() as s:
+        total = s.scalar(select(func.count()).select_from(Oferta))
+        pendentes = s.scalar(
+            select(func.count()).select_from(Oferta).where(Oferta.status == "pendente")
+        )
+        postadas = s.scalar(
+            select(func.count()).select_from(Oferta).where(Oferta.status == "postada")
+        )
+        postadas_hoje = s.scalar(
+            select(func.count()).select_from(Postagem).where(Postagem.postado_em >= inicio_hoje)
+        )
+        desconto_medio = s.scalar(
+            select(func.coalesce(func.avg(Oferta.desconto_pct), 0)).where(Oferta.desconto_pct > 0)
+        )
+        buscas_hoje = s.scalar(
+            select(func.count()).select_from(HistoricoBusca).where(
+                HistoricoBusca.buscado_em >= inicio_hoje
+            )
+        )
     return {
-        "total_ofertas": total,
-        "pendentes": pendentes,
-        "postadas": postadas,
-        "postadas_hoje": postadas_hoje,
-        "desconto_medio": round(desconto_medio, 1),
-        "buscas_hoje": buscas_hoje,
+        "total_ofertas": total or 0,
+        "pendentes": pendentes or 0,
+        "postadas": postadas or 0,
+        "postadas_hoje": postadas_hoje or 0,
+        "desconto_medio": round(float(desconto_medio or 0), 1),
+        "buscas_hoje": buscas_hoje or 0,
     }
 
 
@@ -487,116 +368,86 @@ def obter_stats() -> dict:
 # HISTÓRICO DE BUSCAS
 # =============================================
 
-
 def registrar_busca(fonte: str, palavra_chave: str, qtd: int):
     """Registra uma busca realizada."""
-    conn = _get_conn()
-    conn.execute(
-        """
-        INSERT INTO historico_buscas (fonte, palavra_chave, qtd_resultados)
-        VALUES (?, ?, ?)
-    """,
-        (fonte, palavra_chave, qtd),
-    )
-    conn.commit()
-    conn.close()
+    with _Session() as s:
+        s.add(HistoricoBusca(fonte=fonte, palavra_chave=palavra_chave, qtd_resultados=qtd))
+        s.commit()
 
 
 # =============================================
-# CONFIGURAÇÕES ADICIONAIS
+# CONFIGURAÇÕES
 # =============================================
-
 
 def obter_configuracao(chave: str) -> str | None:
     """Retorna o valor de uma chave na tabela configuracoes."""
-    conn = _get_conn()
-    row = conn.execute(
-        "SELECT valor FROM configuracoes WHERE chave = ?", (chave,)
-    ).fetchone()
-    conn.close()
-    return row["valor"] if row else None
+    with _Session() as s:
+        cfg = s.get(Configuracao, chave)
+        return cfg.valor if cfg else None
 
 
 def definir_configuracao(chave: str, valor: str):
-    """Define ou atualiza o valor de uma chave na tabela configuracoes."""
-    conn = _get_conn()
-    conn.execute(
-        """
-        INSERT INTO configuracoes (chave, valor)
-        VALUES (?, ?)
-        ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor
-    """,
-        (chave, valor),
-    )
-    conn.commit()
-    conn.close()
+    """Define ou atualiza o valor de uma chave (upsert)."""
+    with _Session() as s:
+        cfg = s.get(Configuracao, chave)
+        if cfg:
+            cfg.valor = valor
+        else:
+            s.add(Configuracao(chave=chave, valor=valor))
+        s.commit()
 
 
 # =============================================
 # DEPARTAMENTOS
 # =============================================
 
-
 def listar_departamentos(apenas_ativos: bool = True) -> list[dict]:
-    """Lista todos os departamentos."""
-    conn = _get_conn()
-    query = "SELECT * FROM departamentos"
-    if apenas_ativos:
-        query += " WHERE ativo = 1"
-    query += " ORDER BY nome"
-    rows = conn.execute(query).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    """Lista todos os departamentos (ordenados por nome)."""
+    with _Session() as s:
+        stmt = select(Departamento)
+        if apenas_ativos:
+            stmt = stmt.where(Departamento.ativo.is_(True))
+        stmt = stmt.order_by(Departamento.nome)
+        return [_to_dict(d) for d in s.scalars(stmt).all()]
 
 
 def obter_departamento(dep_id: int) -> dict | None:
     """Retorna um departamento pelo ID."""
-    conn = _get_conn()
-    row = conn.execute("SELECT * FROM departamentos WHERE id = ?", (dep_id,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
+    with _Session() as s:
+        dep = s.get(Departamento, dep_id)
+        return _to_dict(dep) if dep else None
 
 
 def criar_departamento(nome: str, emoji: str = "📦", palavras_chave: str = "") -> int:
     """Cria um departamento e retorna o ID."""
-    conn = _get_conn()
-    cur = conn.execute(
-        "INSERT INTO departamentos (nome, emoji, palavras_chave) VALUES (?, ?, ?)",
-        (nome, emoji, palavras_chave),
-    )
-    conn.commit()
-    dep_id = cur.lastrowid
-    conn.close()
-    return dep_id
+    with _Session() as s:
+        dep = Departamento(nome=nome, emoji=emoji, palavras_chave=palavras_chave)
+        s.add(dep)
+        s.commit()
+        return dep.id
 
 
 def atualizar_departamento(dep_id: int, dados: dict) -> bool:
-    """Atualiza um departamento."""
-    conn = _get_conn()
-    campos = []
-    valores = []
-    for chave in ("nome", "emoji", "palavras_chave", "ativo"):
-        if chave in dados:
-            campos.append(f"{chave} = ?")
-            valores.append(dados[chave])
+    """Atualiza um departamento. False se não houver campos válidos."""
+    campos = {k: dados[k] for k in ("nome", "emoji", "palavras_chave", "ativo") if k in dados}
     if not campos:
-        conn.close()
         return False
-    valores.append(dep_id)
-    conn.execute(f"UPDATE departamentos SET {', '.join(campos)} WHERE id = ?", valores)
-    conn.commit()
-    conn.close()
+    if "ativo" in campos:
+        campos["ativo"] = bool(campos["ativo"])
+    with _Session() as s:
+        dep = s.get(Departamento, dep_id)
+        if dep:
+            for chave, valor in campos.items():
+                setattr(dep, chave, valor)
+            s.commit()
     return True
 
 
 def melhor_departamento(titulo: str, deps: list[dict]) -> int | None:
     """Escolhe o melhor departamento para um título (função pura, sem I/O).
 
-    Casa por PALAVRAS (não substring contíguo): uma keyword de várias palavras
-    (ex "fone bluetooth") casa quando todas as suas palavras aparecem no título,
-    mesmo separadas ("Fone De Ouvido Sem Fio Bluetooth"). Keyword de palavra
-    única casa por token exato (evita "tv" dentro de outra palavra).
-    Score = soma do tamanho das keywords que casaram (mais longa = mais específica).
+    Casa por PALAVRAS: keyword de várias palavras casa quando todas aparecem
+    no título; keyword de palavra única casa por token exato.
     """
     tokens = set(re.findall(r"[a-z0-9]+", titulo.lower()))
     if not tokens:
@@ -607,18 +458,16 @@ def melhor_departamento(titulo: str, deps: list[dict]) -> int | None:
     for dep in deps:
         keywords = [
             k.strip().lower()
-            for k in dep.get("palavras_chave", "").split(",")
+            for k in (dep.get("palavras_chave") or "").split(",")
             if k.strip()
         ]
         score = 0
         for kw in keywords:
-            palavras_kw = kw.split()
-            if all(p in tokens for p in palavras_kw):
+            if all(p in tokens for p in kw.split()):
                 score += len(kw)
         if score > melhor_score:
             melhor_score = score
             melhor_dep_id = dep["id"]
-
     return melhor_dep_id
 
 
@@ -631,7 +480,6 @@ def classificar_departamento(titulo: str) -> int | None:
 # HISTÓRICO DE PREÇOS
 # =============================================
 
-
 def registrar_preco(
     titulo: str,
     preco: float,
@@ -641,134 +489,111 @@ def registrar_preco(
     departamento_id: int = None,
 ):
     """Registra um snapshot de preço no histórico."""
-    conn = _get_conn()
-    conn.execute(
-        """
-        INSERT INTO historico_precos (titulo, preco, link_original, loja,
-                                      preco_original, departamento_id)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """,
-        (titulo, preco, link_original, loja, preco_original, departamento_id),
-    )
-    conn.commit()
-    conn.close()
+    with _Session() as s:
+        s.add(
+            HistoricoPreco(
+                titulo=titulo,
+                preco=preco,
+                link_original=link_original,
+                loja=loja,
+                preco_original=preco_original,
+                departamento_id=departamento_id,
+            )
+        )
+        s.commit()
 
 
 def obter_historico_precos(
     link_original: str = None, titulo: str = None, limite: int = 180
 ) -> list[dict]:
-    """Retorna histórico de preços de um produto (por link ou título parcial)."""
-    conn = _get_conn()
-    if link_original:
-        rows = conn.execute(
-            "SELECT * FROM historico_precos WHERE link_original = ? ORDER BY registrado_em DESC LIMIT ?",
-            (link_original, limite),
-        ).fetchall()
-    elif titulo:
-        rows = conn.execute(
-            "SELECT * FROM historico_precos WHERE titulo LIKE ? ORDER BY registrado_em DESC LIMIT ?",
-            (f"%{titulo}%", limite),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT * FROM historico_precos ORDER BY registrado_em DESC LIMIT ?",
-            (limite,),
-        ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    """Retorna histórico de preços (por link, ou por título parcial, ou tudo)."""
+    with _Session() as s:
+        stmt = select(HistoricoPreco)
+        if link_original:
+            stmt = stmt.where(HistoricoPreco.link_original == link_original)
+        elif titulo:
+            stmt = stmt.where(HistoricoPreco.titulo.like(f"%{titulo}%"))
+        stmt = stmt.order_by(HistoricoPreco.registrado_em.desc()).limit(limite)
+        return [_to_dict(h) for h in s.scalars(stmt).all()]
 
 
 def obter_menor_preco(link_original: str) -> float | None:
     """Retorna o menor preço histórico de um produto."""
-    conn = _get_conn()
-    row = conn.execute(
-        "SELECT MIN(preco) as menor FROM historico_precos WHERE link_original = ?",
-        (link_original,),
-    ).fetchone()
-    conn.close()
-    return row["menor"] if row and row["menor"] else None
+    with _Session() as s:
+        menor = s.scalar(
+            select(func.min(HistoricoPreco.preco)).where(
+                HistoricoPreco.link_original == link_original
+            )
+        )
+        return menor if menor else None
 
 
 # =============================================
 # PRODUTOS RECORRENTES
 # =============================================
 
-
 def listar_produtos_recorrentes(apenas_ativos: bool = True) -> list[dict]:
-    """Lista produtos recorrentes (best sellers monitorados)."""
-    conn = _get_conn()
-    query = """
-        SELECT pr.*, d.nome as departamento_nome, d.emoji as departamento_emoji
-        FROM produtos_recorrentes pr
-        LEFT JOIN departamentos d ON pr.departamento_id = d.id
-    """
-    if apenas_ativos:
-        query += " WHERE pr.ativo = 1"
-    query += " ORDER BY pr.criado_em DESC"
-    rows = conn.execute(query).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    """Lista produtos recorrentes (com nome/emoji do departamento)."""
+    with _Session() as s:
+        stmt = select(ProdutoRecorrente, Departamento.nome, Departamento.emoji).join(
+            Departamento, ProdutoRecorrente.departamento_id == Departamento.id, isouter=True
+        )
+        if apenas_ativos:
+            stmt = stmt.where(ProdutoRecorrente.ativo.is_(True))
+        stmt = stmt.order_by(ProdutoRecorrente.criado_em.desc())
+        saida = []
+        for prod, nome, emoji in s.execute(stmt).all():
+            d = _to_dict(prod)
+            d["departamento_nome"] = nome
+            d["departamento_emoji"] = emoji
+            saida.append(d)
+        return saida
 
 
 def criar_produto_recorrente(dados: dict) -> int:
     """Cadastra um produto recorrente para monitoramento."""
-    conn = _get_conn()
-    cur = conn.execute(
-        """
-        INSERT INTO produtos_recorrentes (titulo, link_original, loja, preco_alvo,
-                                           preco_atual, departamento_id)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """,
-        (
-            dados.get("titulo", ""),
-            dados.get("link_original"),
-            dados.get("loja", "Mercado Livre"),
-            dados.get("preco_alvo"),
-            dados.get("preco_atual"),
-            dados.get("departamento_id"),
-        ),
-    )
-    conn.commit()
-    prod_id = cur.lastrowid
-    conn.close()
-    return prod_id
+    with _Session() as s:
+        prod = ProdutoRecorrente(
+            titulo=dados.get("titulo", ""),
+            link_original=dados.get("link_original"),
+            loja=dados.get("loja", "Mercado Livre"),
+            preco_alvo=dados.get("preco_alvo"),
+            preco_atual=dados.get("preco_atual"),
+            departamento_id=dados.get("departamento_id"),
+        )
+        s.add(prod)
+        s.commit()
+        return prod.id
+
+
+_CAMPOS_RECORRENTE = (
+    "titulo", "link_original", "loja", "preco_alvo", "preco_atual",
+    "preco_minimo", "departamento_id", "ativo", "ultimo_check",
+)
 
 
 def atualizar_produto_recorrente(prod_id: int, dados: dict) -> bool:
-    """Atualiza dados de um produto recorrente."""
-    conn = _get_conn()
-    campos = []
-    valores = []
-    for chave in (
-        "titulo",
-        "link_original",
-        "loja",
-        "preco_alvo",
-        "preco_atual",
-        "preco_minimo",
-        "departamento_id",
-        "ativo",
-        "ultimo_check",
-    ):
-        if chave in dados:
-            campos.append(f"{chave} = ?")
-            valores.append(dados[chave])
+    """Atualiza dados de um produto recorrente. False se não houver campos."""
+    campos = {k: dados[k] for k in _CAMPOS_RECORRENTE if k in dados}
     if not campos:
-        conn.close()
         return False
-    valores.append(prod_id)
-    conn.execute(
-        f"UPDATE produtos_recorrentes SET {', '.join(campos)} WHERE id = ?", valores
-    )
-    conn.commit()
-    conn.close()
+    if "ativo" in campos:
+        campos["ativo"] = bool(campos["ativo"])
+    with _Session() as s:
+        prod = s.get(ProdutoRecorrente, prod_id)
+        if prod:
+            for chave, valor in campos.items():
+                setattr(prod, chave, valor)
+            s.commit()
     return True
 
 
 def deletar_produto_recorrente(prod_id: int) -> bool:
     """Remove um produto recorrente."""
-    conn = _get_conn()
-    cur = conn.execute("DELETE FROM produtos_recorrentes WHERE id = ?", (prod_id,))
-    conn.commit()
-    conn.close()
-    return cur.rowcount > 0
+    with _Session() as s:
+        prod = s.get(ProdutoRecorrente, prod_id)
+        if not prod:
+            return False
+        s.delete(prod)
+        s.commit()
+        return True

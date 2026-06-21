@@ -17,8 +17,19 @@ class Config:
 
     # --- Paths ---
     BASE_DIR = _BASE_DIR
-    DB_PATH = _BASE_DIR / "promo_achados.db"
+    # SQLite legado / fallback. Caminho configurável (testes usam um db temporário).
+    DB_PATH = Path(os.getenv("SQLITE_PATH", str(_BASE_DIR / "promo_achados.db")))
     FRONTEND_DIR = _BASE_DIR / "frontend"
+
+    # --- Banco de dados (Postgres padrão; SQLite como fallback) ---
+    # USE_SQLITE=true força o SQLite legado (usado nos testes e como rede de
+    # segurança). Em produção/dev normal o banco é o Postgres (DATABASE_URL).
+    # Exemplo DEV:  postgresql://promo:promo@localhost:5432/promo_achados
+    # Exemplo PROD: postgresql://user:pass@host:5432/dbname
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL", "postgresql://promo:promo@localhost:5432/promo_achados"
+    )
+    USE_SQLITE: bool = os.getenv("USE_SQLITE", "False").lower() == "true"
 
     # --- Telegram ---
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
