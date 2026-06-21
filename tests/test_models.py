@@ -43,6 +43,15 @@ def test_oferta_tem_colunas_chave():
             "dados_extra", "frete_gratis", "criado_em"} <= cols
 
 
+def test_oferta_tem_colunas_monetizacao():
+    """TASK-09: flag de alta comissão + cupom + validade da oferta relâmpago."""
+    of = Base.metadata.tables["ofertas"]
+    cols = {c.name for c in of.columns}
+    assert {"high_commission", "cupom", "expira_em"} <= cols
+    assert of.c.high_commission.type.__class__.__name__ == "Boolean"
+    assert of.c.expira_em.type.__class__.__name__ == "DateTime"
+
+
 def test_tipagem_correta():
     of = Base.metadata.tables["ofertas"]
     assert of.c.frete_gratis.type.__class__.__name__ == "Boolean"

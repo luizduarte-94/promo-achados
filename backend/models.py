@@ -67,6 +67,12 @@ class Oferta(Base):
     status: Mapped[str] = mapped_column(String(20), default="pendente")
     fonte: Mapped[str] = mapped_column(String(40), default="manual")
     dados_extra: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # --- Monetização (TASK-09): priorização de ofertas comissionadas ---
+    # high_commission: selo "Comissão Extra"/cupom exclusivo -> fila prioritária.
+    high_commission: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # cupom: código aplicável (ex. "FRETE10"); expira_em: fim da oferta relâmpago.
+    cupom: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    expira_em: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     departamento_id: Mapped[int | None] = mapped_column(
         ForeignKey("departamentos.id"), nullable=True
     )

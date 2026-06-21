@@ -17,19 +17,17 @@ class Config:
 
     # --- Paths ---
     BASE_DIR = _BASE_DIR
-    # SQLite legado / fallback. Caminho configurável (testes usam um db temporário).
+    USE_SQLITE   = os.getenv("USE_SQLITE", "False").lower() == "true"
+    SQLITE_PATH  = os.getenv("SQLITE_PATH", "promo_achados.db")
     DB_PATH = Path(os.getenv("SQLITE_PATH", str(_BASE_DIR / "promo_achados.db")))
     FRONTEND_DIR = _BASE_DIR / "frontend"
 
-    # --- Banco de dados (Postgres padrão; SQLite como fallback) ---
-    # USE_SQLITE=true força o SQLite legado (usado nos testes e como rede de
-    # segurança). Em produção/dev normal o banco é o Postgres (DATABASE_URL).
-    # Exemplo DEV:  postgresql://promo:promo@localhost:5432/promo_achados
-    # Exemplo PROD: postgresql://user:pass@host:5432/dbname
+    # --- PostgreSQL (banco principal; ver docker-compose.yml) ---
+    # Default casa com o docker-compose local. A aplicação só passa a USAR o
+    # Postgres na TASK-04; por ora a camada ORM (backend/models.py) o consome.
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL", "postgresql://promo:promo@localhost:5432/promo_achados"
     )
-    USE_SQLITE: bool = os.getenv("USE_SQLITE", "False").lower() == "true"
 
     # --- Telegram ---
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -44,6 +42,11 @@ class Config:
     SHOPEE_APP_ID: str = os.getenv("SHOPEE_APP_ID", "")
     SHOPEE_APP_SECRET: str = os.getenv("SHOPEE_APP_SECRET", "")
     SHOPEE_API_BASE: str = "https://open-api.affiliate.shopee.com.br/graphql"
+    # Comissão (0–1) a partir da qual a oferta é marcada high_commission (fila VIP).
+    # Ex.: 0.10 = 10%. Selo "Comissão Extra" da Shopee também ativa a flag.
+    SHOPEE_HIGH_COMMISSION_PCT: float = float(
+        os.getenv("SHOPEE_HIGH_COMMISSION_PCT", "0.10")
+    )
 
     # --- WhatsApp Business ---
     WHATSAPP_ACCESS_TOKEN: str = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
@@ -58,6 +61,17 @@ class Config:
     # --- Divulgação ---
     # Linktree/landing com todos os teus links (aparece no rodapé das mensagens).
     LINKTREE_URL: str = os.getenv("LINKTREE_URL", "")
+
+    # --- Monetização / Tracking (TASK-10) ---
+    # Parâmetros injetados em TODO link de afiliado para atribuir clique por canal.
+    UTM_CAMPAIGN: str = os.getenv("UTM_CAMPAIGN", "promoachados")
+    UTM_MEDIUM: str = os.getenv("UTM_MEDIUM", "afiliados")
+    # Canal padrão atribuído ao link gravado na ingestão (o site consome esse link).
+    AFILIADO_CANAL_PADRAO: str = os.getenv("AFILIADO_CANAL_PADRAO", "site")
+    # Encurtar links da Shopee via Affiliate API (requer credenciais). Default ON.
+    AFILIADO_ENCURTAR_SHOPEE: bool = (
+        os.getenv("AFILIADO_ENCURTAR_SHOPEE", "True").lower() == "true"
+    )
 
     # --- Inteligência Artificial ---
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
@@ -76,8 +90,12 @@ class Config:
 
     # --- Revalidação de preço (re-checa o preço atual antes de postar/copiar) ---
     # Evita divulgar preço velho. Bloqueia o post se o preço subiu além do limite.
-    REVALIDAR_PRECO_ENABLED: bool = os.getenv("REVALIDAR_PRECO_ENABLED", "True").lower() == "true"
-    REVALIDAR_BLOQUEIO_ALTA_PCT: float = float(os.getenv("REVALIDAR_BLOQUEIO_ALTA_PCT", "5"))
+    REVALIDAR_PRECO_ENABLED: bool = (
+        os.getenv("REVALIDAR_PRECO_ENABLED", "True").lower() == "true"
+    )
+    REVALIDAR_BLOQUEIO_ALTA_PCT: float = float(
+        os.getenv("REVALIDAR_BLOQUEIO_ALTA_PCT", "5")
+    )
 
     # --- Painel (autenticação básica) ---
     # PANEL_PASSWORD vazio = auth DESLIGADA (dev local). Defina p/ proteger o painel.
@@ -92,8 +110,12 @@ class Config:
 
     # --- Monitoramento de Recorrentes (alerta de queda de preco) ---
     # Desligado por padrao. Quando ligado, rebusca os recorrentes e alerta no Telegram.
-    MONITOR_RECORRENTES_ENABLED: bool = os.getenv("MONITOR_RECORRENTES_ENABLED", "False").lower() == "true"
-    MONITOR_RECORRENTES_INTERVALO_MINUTOS: int = int(os.getenv("MONITOR_RECORRENTES_INTERVALO_MINUTOS", "360"))
+    MONITOR_RECORRENTES_ENABLED: bool = (
+        os.getenv("MONITOR_RECORRENTES_ENABLED", "False").lower() == "true"
+    )
+    MONITOR_RECORRENTES_INTERVALO_MINUTOS: int = int(
+        os.getenv("MONITOR_RECORRENTES_INTERVALO_MINUTOS", "360")
+    )
 
     # --- Espelho (grupos WhatsApp como sinal de tendência) ---
     # O bot-espelho (Node) grava as mensagens dos grupos em data/espelho_inbox.jsonl.
