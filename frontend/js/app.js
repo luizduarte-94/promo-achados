@@ -35,6 +35,7 @@ const App = {
             this.carregarOfertas(),
             this.carregarConfig(),
             this.carregarHistorico(),
+            this.carregarAnalytics(),
         ]);
         setInterval(() => this.carregarStats(), 30000);
     },
@@ -55,12 +56,13 @@ const App = {
             buscar: 'Buscar Ofertas',
             historico: 'Histórico',
             recorrentes: 'Produtos Recorrentes',
+            analytics: 'Analytics',
             config: 'Configurações',
         };
         document.getElementById('pageTitle').textContent = titles[tabName] || tabName;
 
         // Show/hide tabs
-        ['Dashboard', 'Ofertas', 'Buscar', 'Historico', 'Recorrentes', 'Config'].forEach(t => {
+        ['Dashboard', 'Ofertas', 'Buscar', 'Historico', 'Recorrentes', 'Analytics', 'Config'].forEach(t => {
             const section = document.getElementById('tab' + t);
             if (section) section.style.display = 'none';
         });
@@ -72,6 +74,7 @@ const App = {
 
         if (tabName === 'historico') this.carregarHistorico();
         if (tabName === 'recorrentes') this.carregarRecorrentes();
+        if (tabName === 'analytics') this.carregarAnalytics();
 
         // Close mobile sidebar
         document.querySelector('.sidebar')?.classList.remove('open');
@@ -527,6 +530,105 @@ const App = {
             if (fullList) renderList(fullList, data);
             if (dashList) renderList(dashList, data, 5);
         } catch (e) { console.error('Erro histórico:', e); }
+    },
+
+    // =============================================
+    // ANALYTICS
+    // =============================================
+
+    async carregarAnalytics() {
+        try {
+            const resp = await fetch(`${API}/analytics/summary`);
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const data = await resp.json();
+            this.renderAnalytics(data || {});
+        } catch (e) {
+            console.error('Erro analytics:', e);
+            this.renderAnalytics(null);
+        }
+    },
+
+    renderAnalytics(data) {
+        const canalEmoji = { telegram: '📱', whatsapp: '💬', instagram: '📸', site: '🌐' };
+
+        // --- vazio / erro: zera KPIs e mostra estados vazios, sem quebrar ---
+        if (!data) {
+            document.getElementById('kpiCliquesTotais').textContent = '0';
+            document.getElementById('kpiFaturamento').textContent = this.fmtPreco(0);
+            document.getElementById('kpiOfertasClique').textContent = '0';
+            const vazio = (cols, txt) => `<tr><td colspan="${cols}"><div class="empty"><div class="empty-icon">📈</div><div class="empty-text">${txt}</div></div></td></tr>`;
+            document.getElementById('analyticsCanalBody').innerHTML = vazio(4, 'Sem dados de clique');
+            document.getElementById('analyticsTopBody').innerHTML = vazio(4, 'Sem dados de clique');
+            const note = document.getElementById('analyticsCtrNote');
+            if (note) note.textContent = 'Não foi possível carregar o resumo de analytics.';
+            return;
+        }
+
+        const totais = data.totais || {};
+        const cliquesPorCanal = data.cliques_por_canal || {};
+        const fatPorCanal = data.faturamento_estimado_por_canal || {};
+        const epcPorCanal = data.epc_por_canal || {};
+
+        // --- KPIs superiores ---
+        const totalFat = Object.values(fatPorCanal)
+            .reduce((s, c) => s + ((c && c.comissao_estimada) || 0), 0);
+        document.getElementById('kpiCliquesTotais').textContent = totais.cliques ?? 0;
+        document.getElementById('kpiFaturamento').textContent = this.fmtPreco(totalFat);
+        document.getElementById('kpiOfertasClique').textContent = totais.ofertas_com_clique ?? 0;
+
+        // --- nota de CTR (honesta: indisponível sem impressões) + atualização ---
+        const note = document.getElementById('analyticsCtrNote');
+        if (note) {
+            const ctr = data.ctr || {};
+            const atualizado = data.gerado_em ? ` · Atualizado: ${this.fmtData(data.gerado_em)}` : '';
+            if (ctr.disponivel) {
+                note.textContent = `CTR: ${ctr.valor}${atualizado}`;
+            } else {
+                note.innerHTML = `📊 <strong>CTR indisponível</strong> — ${this._esc(ctr.motivo || 'sem impressões instrumentadas.')}${atualizado}`;
+            }
+        }
+
+        // --- tabela por canal (ordenada por cliques) ---
+        const canalBody = document.getElementById('analyticsCanalBody');
+        const canais = Object.keys(cliquesPorCanal).sort((a, b) => cliquesPorCanal[b] - cliquesPorCanal[a]);
+        if (!canais.length) {
+            canalBody.innerHTML = `<tr><td colspan="4"><div class="empty"><div class="empty-icon">📡</div><div class="empty-text">Nenhum clique por canal ainda</div><div class="empty-hint">Os cliques aparecem quando alguém abre um link /r/</div></div></td></tr>`;
+        } else {
+            canalBody.innerHTML = canais.map(canal => {
+                const cliques = cliquesPorCanal[canal] || 0;
+                const f = fatPorCanal[canal] || {};
+                const cob = (f.cobertura_comissao_pct ?? null);
+                const cobTxt = (cob === null || cob === undefined) ? '—' : `${cob}%`;
+                const epc = epcPorCanal[canal];
+                const epcTxt = (epc === null || epc === undefined) ? '—' : this.fmtPreco(epc);
+                const ic = canalEmoji[canal] || '📢';
+                return `<tr>
+                    <td>${ic} ${this._esc(canal)}</td>
+                    <td>${cliques}</td>
+                    <td>${cobTxt}</td>
+                    <td>${epcTxt}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        // --- top ofertas por cliques ---
+        const topBody = document.getElementById('analyticsTopBody');
+        const top = Array.isArray(data.top_ofertas) ? data.top_ofertas : [];
+        if (!top.length) {
+            topBody.innerHTML = `<tr><td colspan="4"><div class="empty"><div class="empty-icon">🎯</div><div class="empty-text">Nenhuma oferta com clique</div></div></td></tr>`;
+        } else {
+            topBody.innerHTML = top.map((o, i) => {
+                const titulo = o.removida
+                    ? `<span style="opacity:.6;font-style:italic;">(oferta removida) #${o.oferta_id}</span>`
+                    : this._esc(o.titulo || `Oferta #${o.oferta_id}`);
+                return `<tr>
+                    <td>${i + 1}</td>
+                    <td>${titulo}</td>
+                    <td>${this._esc(o.loja || '—')}</td>
+                    <td>${o.cliques ?? 0}</td>
+                </tr>`;
+            }).join('');
+        }
     },
 
     // =============================================

@@ -45,6 +45,10 @@
                 <span class="nav-icon">⭐</span>
                 <span class="nav-label">Recorrentes</span>
             </button>
+            <button class="nav-item" data-tab="analytics" onclick="App.switchTab('analytics', this)">
+                <span class="nav-icon">📈</span>
+                <span class="nav-label">Analytics</span>
+            </button>
             <button class="nav-item" data-tab="config" onclick="App.switchTab('config', this)">
                 <span class="nav-icon">⚙️</span>
                 <span class="nav-label">Configurações</span>
@@ -238,6 +242,63 @@
                                 <div class="empty-hint">Clique em "Monitorar Produto"</div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== TAB: ANALYTICS ===== -->
+            <section id="tabAnalytics" style="display:none;">
+                <div class="kpi-row">
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <div class="kpi-icon-wrap blue">🖱️</div>
+                        </div>
+                        <div class="kpi-value" id="kpiCliquesTotais">0</div>
+                        <div class="kpi-label">Cliques Totais</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <div class="kpi-icon-wrap green">💰</div>
+                        </div>
+                        <div class="kpi-value" id="kpiFaturamento">R$ 0,00</div>
+                        <div class="kpi-label">Faturamento Estimado</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-header">
+                            <div class="kpi-icon-wrap amber">🎯</div>
+                        </div>
+                        <div class="kpi-value" id="kpiOfertasClique">0</div>
+                        <div class="kpi-label">Ofertas com Clique</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">Desempenho por Canal</div>
+                        <button class="btn btn-ghost btn-sm" onclick="App.carregarAnalytics()">🔄 Atualizar</button>
+                    </div>
+                    <div class="panel-body">
+                        <p id="analyticsCtrNote" style="font-size:12px;color:var(--text-tertiary);margin-bottom:14px;"></p>
+                        <table class="data-table">
+                            <thead><tr>
+                                <th>Canal</th><th>Cliques</th><th>Cobertura</th><th>EPC</th>
+                            </tr></thead>
+                            <tbody id="analyticsCanalBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">Top Ofertas por Cliques</div>
+                    </div>
+                    <div class="panel-body">
+                        <table class="data-table">
+                            <thead><tr>
+                                <th>#</th><th>Oferta</th><th>Loja</th><th>Cliques</th>
+                            </tr></thead>
+                            <tbody id="analyticsTopBody"></tbody>
+                        </table>
                     </div>
                 </div>
             </section>
