@@ -1,0 +1,4 @@
+ALTER TABLE ofertas ADD COLUMN IF NOT EXISTS high_commission BOOLEAN DEFAULT FALSE;
+ALTER TABLE ofertas ADD COLUMN IF NOT EXISTS cupom VARCHAR(60);
+ALTER TABLE ofertas ADD COLUMN IF NOT EXISTS expira_em TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS ix_ofertas_high_commission ON ofertas (high_commission);
