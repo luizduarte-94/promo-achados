@@ -8,9 +8,10 @@ Siga este checklist quando for subir o sistema em uma VPS (como Hetzner, Digital
 
 - [ ] Instancie o PostgreSQL no servidor de produção (via Docker Compose ou serviço gerenciado).
 - [ ] Conecte a aplicação apontando a variável `DATABASE_URL` no seu `.env` de produção para o IP/domínio do banco.
-- [ ] **MUITO IMPORTANTE:** Aplique as migrações na produção rodando o script SQL:
+- [ ] **MUITO IMPORTANTE:** Aplique TODAS as migrações na produção, na ordem:
   ```bash
   psql -U seu_usuario -d promo_achados -f db/migrations/2026-06-21-click-events.sql
+  psql -U seu_usuario -d promo_achados -f db/migrations/2026-06-21-ofertas-high-commission.sql
   ```
 
 ## 2. Variáveis de Ambiente Críticas (.env)
@@ -24,22 +25,25 @@ No servidor, seu `.env` DEVE possuir estas variáveis preenchidas para que os re
 
 ## 3. Disparo Contínuo (Serviço de Background)
 
-A nossa aplicação tem duas "metades". O FastAPI (que serve o painel e os redirects) e o Worker (que busca ofertas sozinho a cada X minutos).
+A aplicação tem duas "metades" que rodam em **processos separados**. O `main.py` sobe SÓ a API/painel/redirects — ele **não** inicia nenhum agendador. Os jobs automáticos (busca, auto-post, monitor de recorrentes, espelho) vivem no worker `backend.scheduler_worker`.
 
-- [ ] Garanta que o comando principal está rodando sob um gerenciador de processos (como PM2 ou Systemd):
+- [ ] Rode os **dois** processos sob um gerenciador (PM2 ou Systemd), cada um como serviço próprio:
   ```bash
-  python main.py
+  python main.py                      # API + painel + redirects (porta 8000)
+  python -m backend.scheduler_worker  # agendador (busca/auto-post/monitor/espelho)
   ```
-- [ ] *Nota:* O `main.py` atual já possui a lógica de ligar os schedulers nativamente dentro do startup do FastAPI, então apenas garantir que o `main.py` não morra já é suficiente para 90% das automações básicas rodarem.
+- [ ] **Atenção:** se você só subir o `main.py`, as automações NÃO rodam — nada será buscado nem postado sozinho. O worker precisa estar de pé e ser reiniciado junto com a API.
 
 ## 4. Reverse Proxy / SSL (HTTPS)
 
 - [ ] É essencial usar o Nginx ou Caddy na frente do seu Uvicorn. O FastAPI rodará na porta 8000 local do servidor, e o Nginx vai interceptar a porta 443 (HTTPS) e jogar para o 8000.
 - [ ] O HTTPS é obrigatório, pois navegadores bloqueiam cliques e redirects de links HTTP comuns. Use o **Certbot (Let's Encrypt)** para gerar um certificado gratuito em 1 minuto.
+- [ ] **HTTPS também por segurança:** o painel usa Basic Auth (usuário/senha em base64, NÃO criptografado). Sob HTTP puro a senha trafega de forma recuperável. Só exponha o painel atrás de HTTPS.
+- [ ] **Restrinja o CORS:** o `main.py` sobe com `allow_origins=["*"]` (liberado, conveniente em dev). Em produção, limite a origem ao seu domínio — no reverse proxy (Nginx) ou ajustando o middleware — para o painel não aceitar requisições de qualquer site.
 
 ## 5. O Grande Teste Final
 
-- [ ] Acesse seu painel pela internet: `https://seu-dominio.com/painel`.
+- [ ] Acesse seu painel pela internet na raiz: `https://seu-dominio.com/` (o painel é servido em `/` — não existe rota `/painel`).
 - [ ] Poste 1 oferta no seu Telegram (canal fechado de teste).
 - [ ] Acesse o Telegram no seu celular com 4G (para ter um IP externo), clique na oferta.
 - [ ] Verifique se o celular abriu a Shopee/Mercado Livre corretamente.
