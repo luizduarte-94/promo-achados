@@ -1,0 +1,26 @@
+# systemd unit — Worker (agendador: busca automática, auto-post, monitor de
+# recorrentes, espelho). Processo SEPARADO da API. Sem ele, NADA roda sozinho.
+#
+# Instalar:
+#   sudo cp deploy/promo-worker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now promo-worker
+#
+# Ajuste WorkingDirectory/User/paths se não usar /opt/promo-achados + usuário 'promo'.
+
+[Unit]
+Description=Promo Achados Worker (agendador: busca/auto-post/monitor/espelho)
+After=network.target docker.service promo-api.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=promo
+Group=promo
+WorkingDirectory=/opt/promo-achados
+EnvironmentFile=/opt/promo-achados/.env
+ExecStart=/opt/promo-achados/.venv/bin/python -m backend.scheduler_worker
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

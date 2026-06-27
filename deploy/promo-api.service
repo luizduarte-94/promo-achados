@@ -1,0 +1,26 @@
+# systemd unit — API (FastAPI: painel + vitrine + redirects /r/).
+# Processo SEPARADO do worker. Sobe SÓ o servidor HTTP; NÃO inicia agendador.
+#
+# Instalar:
+#   sudo cp deploy/promo-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now promo-api
+#
+# Ajuste WorkingDirectory/User/paths se não usar /opt/promo-achados + usuário 'promo'.
+
+[Unit]
+Description=Promo Achados API (FastAPI + painel + redirects)
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=promo
+Group=promo
+WorkingDirectory=/opt/promo-achados
+EnvironmentFile=/opt/promo-achados/.env
+ExecStart=/opt/promo-achados/.venv/bin/python main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
