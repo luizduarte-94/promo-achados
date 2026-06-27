@@ -86,15 +86,20 @@ def extrair_produto_id(link: str) -> str | None:
 
 
 def _gerar_afiliado_base(link_original: str) -> str | None:
-    """Link de afiliado base (canal padrão, sem rede) p/ gravar na ingestão.
+    """Link base rastreado para lojas com integração; ML exige meli.la manual.
 
-    Sem encurtar (scrape fica offline/rápido); os canais encurtam no envio.
+    UTM em link original do Mercado Livre não gera comissão, portanto ofertas MLB
+    ficam sem link_afiliado até o operador inserir o shortlink oficial meli.la.
+    Para outras lojas, mantém o comportamento existente sem chamada de rede.
     Defensivo: qualquer falha do motor de monetização não quebra a coleta.
     """
+    produto_id = extrair_produto_id(link_original)
+    if (produto_id and produto_id.startswith("MLB")) or "mercadolivre." in link_original.lower():
+        return None
     try:
         return gerar_link_afiliado(
             link_original,
-            produto_id=extrair_produto_id(link_original),
+            produto_id=produto_id,
             encurtar=False,
         )
     except Exception as e:  # nunca travar a ingestão por causa do tracking
@@ -242,7 +247,7 @@ _CAMPOS_OFERTA = (
     "titulo", "preco", "preco_original", "desconto_pct", "loja", "link_original",
     "link_afiliado", "imagem_url", "categoria", "vendedor", "reputacao",
     "frete_gratis", "status", "departamento_id",
-    "high_commission", "cupom", "expira_em",
+    "high_commission", "cupom", "expira_em", "dados_extra",
 )
 
 
@@ -304,8 +309,8 @@ def coletar_e_salvar(ofertas: list[dict], fonte: str | None = None) -> list[dict
         dep_id = classificar_departamento(oferta.get("titulo", ""))
         if dep_id:
             oferta["departamento_id"] = dep_id
-        # Monetização (TASK-10): nenhum link entra sem rastreio. Gera o link de
-        # afiliado base (canal padrão) na ingestão; defensivo p/ nunca travar.
+        # Mercado Livre fica sem link até receber o meli.la oficial. UTM aplicada
+        # ao link original não gera comissão e não deve se passar por afiliado.
         if not oferta.get("link_afiliado") and oferta.get("link_original"):
             oferta["link_afiliado"] = _gerar_afiliado_base(oferta["link_original"])
         oferta["id"] = criar_oferta(oferta)

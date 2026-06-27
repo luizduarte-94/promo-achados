@@ -17,6 +17,7 @@ from backend.espelho import termos_do_espelho
 from backend import database as db
 from backend import precos
 from backend.config import config
+from backend.monetization import oferta_tem_link_afiliado_valido
 
 
 # --- Observabilidade: logs estruturados (JSON) dos jobs (TASK-08) ---
@@ -63,7 +64,7 @@ def auto_postar():
     pendentes = db.listar_ofertas(status="pendente", limite=200)
     candidatas = [
         o for o in pendentes
-        if (o.get("link_afiliado") or "").strip()
+        if oferta_tem_link_afiliado_valido(o)
         and score_oferta(o) >= config.AUTO_POST_SCORE_MINIMO
     ]
     candidatas.sort(key=score_oferta, reverse=True)

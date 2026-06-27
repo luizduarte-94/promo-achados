@@ -121,6 +121,11 @@ class WhatsAppChannel(BaseChannel):
             linhas.append(f"*Por: {preco_fmt} à vista*")
         linhas.append("")
 
+        parcelamento = self.obter_parcelamento(oferta)
+        if parcelamento:
+            linhas.append(f"💳 *{parcelamento}*")
+            linhas.append("")
+
         cupom = oferta.get("cupom") or (oferta.get("dados_extra") or {}).get("cupom", "")
         if cupom:
             linhas.append("⚡ *CUPOM RELÂMPAGO*")

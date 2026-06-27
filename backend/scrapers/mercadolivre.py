@@ -8,8 +8,10 @@ cooldown automático ao detectar bloqueio (HTTP 403/429).
 """
 
 import random
+import re
 import threading
 import time
+from urllib.parse import urlsplit, urlunsplit
 import requests
 import bs4
 from backend.scrapers.base import BaseScraper
@@ -137,6 +139,70 @@ class MercadoLivreScraper(BaseScraper):
         except ValueError:
             return None
 
+    @staticmethod
+    def _cupom_coerente(cupom: str, preco: float) -> bool:
+        """Rejeita selo de cupom cujo desconto em reais alcança o preço inteiro."""
+        if not cupom:
+            return True
+        valor_match = re.search(r"R\$\s*([\d.]+(?:,\d{1,2})?)", cupom, re.IGNORECASE)
+        if not valor_match:
+            return True
+        try:
+            valor = float(valor_match.group(1).replace(".", "").replace(",", "."))
+        except ValueError:
+            return False
+        return 0 < valor < preco
+
+    @staticmethod
+    def _extrair_parcelamento_detalhe(html: str) -> str:
+        """Extrai o maior parcelamento explicitamente exibido na página."""
+        soup = bs4.BeautifulSoup(html, "html.parser")
+        candidatos = soup.select(
+            ".ui-pdp-media__title, .ui-pdp-price__subtitles, "
+            ".ui-pdp-price__second-line"
+        )
+
+        # A chamada "até Nx sem juros" é a melhor condição e pode aparecer
+        # depois do parcelamento padrão no HTML; por isso ela tem prioridade.
+        for elemento in candidatos:
+            texto = " ".join(elemento.get_text(" ", strip=True).split())
+            destaque = re.search(
+                r"(?:pague\s+em\s+)?at[eé]\s+(\d{1,2})x\s+sem\s+juros",
+                texto,
+                flags=re.IGNORECASE,
+            )
+            if destaque:
+                return f"Pague em até {int(destaque.group(1))}x sem juros"
+
+        for elemento in candidatos:
+            texto = " ".join(elemento.get_text(" ", strip=True).split())
+            parcela = re.search(
+                r"(\d{1,2})x\s+R\$\s*([\d.]+)(?:\s*,\s*(\d{2}))?"
+                r"(?:\s+(sem\s+juros))?",
+                texto,
+                flags=re.IGNORECASE,
+            )
+            if parcela:
+                valor = parcela.group(2)
+                if parcela.group(3):
+                    valor += f",{parcela.group(3)}"
+                juros = " sem juros" if parcela.group(4) else ""
+                return f"{int(parcela.group(1))}x de R$ {valor}{juros}"
+        return ""
+
+    def buscar_parcelamento(self, link_original: str) -> str:
+        """Consulta a página do produto e devolve o parcelamento público atual."""
+        partes = urlsplit(link_original or "")
+        host = (partes.hostname or "").lower()
+        if not (host == "mercadolivre.com.br" or host.endswith(".mercadolivre.com.br")):
+            return ""
+
+        url = urlunsplit((partes.scheme, partes.netloc, partes.path, partes.query, ""))
+        resp = self._fetch(url)
+        if not resp:
+            return ""
+        return self._extrair_parcelamento_detalhe(resp.text)
+
     def _parsear_item(self, item: bs4.element.Tag) -> dict | None:
         """Extrai as informações de um elemento HTML do produto."""
         try:
@@ -183,6 +249,8 @@ class MercadoLivreScraper(BaseScraper):
             # 6. Cupom de Desconto
             cupom_el = item.select_one('.poly-coupons__pill')
             cupom = cupom_el.text.strip() if cupom_el else ""
+            if not self._cupom_coerente(cupom, preco):
+                cupom = ""
 
             # 7. Parcelamento e PIX
             pagamento_info = []

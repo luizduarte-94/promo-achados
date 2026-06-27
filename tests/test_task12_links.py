@@ -43,11 +43,25 @@ def test_link_redirect_usa_base_configurada(monkeypatch):
     assert link == "https://api.promoachados.com/r/42?c=telegram"
 
 
-def test_telegram_botao_aponta_para_redirect():
+def test_telegram_botao_aponta_para_redirect(monkeypatch):
+    # Determinístico: URL pública explícita (não depende do REDIRECT_BASE_URL do .env).
+    monkeypatch.setattr(config, "REDIRECT_BASE_URL", "https://promo.example.com")
     canal = TelegramChannel()
     rm = canal._get_reply_markup(canal._link_rastreado(OFERTA))
-    assert "/r/42?c=telegram" in rm
+    assert rm is not None
+    assert "https://promo.example.com/r/42?c=telegram" in rm
     assert "COMPRAR" in rm
+
+
+def test_telegram_sem_botao_em_localhost(monkeypatch):
+    """Guard: o Telegram rejeita botão com URL localhost/127.0.0.1 (BUTTON_URL_INVALID).
+    Em dev (REDIRECT_BASE_URL local) o botão é omitido p/ o post não falhar — a
+    mensagem ainda é enviada, só sem o botão. Não remover sem URL pública/redirect.
+    """
+    canal = TelegramChannel()
+    for base in ("http://localhost:8000", "http://127.0.0.1:8000"):
+        monkeypatch.setattr(config, "REDIRECT_BASE_URL", base)
+        assert canal._get_reply_markup(canal._link_rastreado(OFERTA)) is None
 
 
 def test_whatsapp_mensagem_preserva_formato_e_usa_redirect(monkeypatch):

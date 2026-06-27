@@ -624,26 +624,28 @@ body {
 
 .offer-card {
     background: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
+    border: 1px solid var(--border-default);
     border-radius: var(--radius-lg);
     overflow: hidden;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.35);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease, border-color 0.25s ease;
 }
 
 .offer-card:hover {
     border-color: var(--border-active);
-    box-shadow: var(--shadow-card);
-    transform: translateY(-3px);
+    box-shadow: var(--shadow-elevated), var(--shadow-glow-brand);
+    transform: translateY(-4px);
 }
 
 .offer-img-wrap {
     position: relative;
-    height: 190px;
+    height: 200px;
     background: var(--bg-card);
     overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 14px;
 }
 
 .offer-img {
@@ -686,15 +688,16 @@ body {
     padding: 3px 10px;
     background: rgba(0,0,0,0.65);
     backdrop-filter: blur(8px);
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
+    opacity: 0.7;
 }
 
 .badge-store.ml { color: var(--ml-color); border: 1px solid rgba(255,230,0,0.3); }
 .badge-store.shopee { color: var(--shopee-color); border: 1px solid rgba(238,77,45,0.3); }
 
 .offer-body {
-    padding: 16px 18px 12px;
+    padding: 18px 18px 14px;
 }
 
 .offer-title {
@@ -717,7 +720,7 @@ body {
 }
 
 .offer-price-current {
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 800;
     color: var(--brand-secondary);
     letter-spacing: -0.5px;
@@ -737,9 +740,9 @@ body {
 }
 
 .offer-status {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
-    padding: 3px 8px;
+    padding: 4px 10px;
     border-radius: var(--radius-full);
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -750,7 +753,7 @@ body {
 
 .offer-seller {
     font-size: 11px;
-    color: var(--text-tertiary);
+    color: var(--text-secondary);
 }
 
 .offer-dept {
@@ -1118,3 +1121,327 @@ body {
 
 /* Empty state menos chapado */
 .empty-icon { filter: grayscale(0.15); }
+
+/* Checkbox discreto: pequeno, sem caixa decorativa; aparece no hover/checked */
+.offer-checkbox {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    z-index: 20;
+    accent-color: var(--brand-primary);
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+.offer-card:hover .offer-checkbox,
+.offer-checkbox:checked {
+    opacity: 0.9;
+}
+
+/* === Refino UX da tela de Ofertas (TASKs 17–23) === */
+
+/* TASK-17 — hierarquia: dados secundários só ganham foco no hover */
+.offer-meta-secondary {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+.offer-card:hover .offer-meta-secondary { opacity: 1; }
+
+/* TASK-18 — ação principal (TG) dominante; secundárias compactas */
+.btn-primary-action {
+    flex: 2;
+    font-size: 13px;
+    font-weight: 700;
+    justify-content: center;
+}
+.btn-icon-action {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+}
+/* Lixeira discreta: ícone fantasma no canto, só no hover — sem pílula/badge */
+.offer-delete {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 15;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-tertiary);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    border-radius: var(--radius-sm);
+    transition: opacity 0.2s, color 0.2s, background 0.2s;
+}
+.offer-card:hover .offer-delete { opacity: 0.65; }
+.offer-delete:hover {
+    opacity: 1;
+    color: var(--danger);
+    background: rgba(0,0,0,0.35);
+}
+
+/* TASK-19 — frete vira chip no corpo (sai de cima da imagem) */
+.offer-frete-chip {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--success);
+    background: var(--success-bg);
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    margin-bottom: 6px;
+}
+
+/* TASK-20 — filtros segmentados por função */
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.filter-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    letter-spacing: 1px;
+    font-weight: 700;
+    margin-right: 4px;
+    white-space: nowrap;
+}
+.filter-groups-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* TASK-21 — feedback de seleção em lote + barra sticky */
+.offer-card.selected {
+    border-color: var(--brand-primary);
+    box-shadow: var(--shadow-glow-brand);
+}
+.lote-bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg-card);
+    padding: 10px 0;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* TASK-22 — cupom sem estilo inline */
+.offer-cupom {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #d4bfff;
+    background: rgba(139, 92, 246, 0.15);
+    padding: 6px 10px;
+    border-radius: 6px;
+    display: inline-block;
+    border: 1px dashed #8b5cf6;
+}
+
+/* =============================================
+   ADMIN — aba Ofertas (layout dark do painel)
+   ============================================= */
+
+/* Respiro entre filtros e grade de ofertas */
+.ofertas-vitrine .panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+/* Filtros discretos (visual secundário, bloco sutil) */
+.filter-groups-container {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+}
+
+/* Estado vazio compacto e elegante (sem painel gigante vazio) */
+.empty-vitrine {
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-surface);
+    border: 1px dashed var(--border-default);
+    border-radius: var(--radius-lg);
+}
+
+/* =============================================
+   VITRINE PÚBLICA (#publicHome) — separada do admin
+   ============================================= */
+
+.public-shell { display: none; }
+body.vitrine-ativa .sidebar,
+body.vitrine-ativa .sidebar-toggle,
+body.vitrine-ativa .main-content { display: none !important; }
+body.vitrine-ativa .public-shell { display: block; }
+
+.public-shell {
+    background: #f3f4f6;
+    color: #1f2937;
+    min-height: 100vh;
+    width: 100%;
+    font-family: var(--font);
+}
+
+/* Header preto */
+.public-header { background: #0b0b0f; }
+.public-header-inner {
+    max-width: 1200px; margin: 0 auto; height: 72px;
+    display: flex; align-items: center; gap: 20px; padding: 0 20px;
+}
+.public-logo { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 18px; color: #fff; white-space: nowrap; }
+.public-logo .dot { color: var(--brand-primary); }
+.public-search { flex: 1; display: flex; max-width: 640px; }
+.public-search input {
+    flex: 1; height: 42px; border: none; border-radius: 8px 0 0 8px;
+    padding: 0 14px; font-family: var(--font); font-size: 14px; outline: none; color: #111827; background: #fff;
+}
+.public-search button {
+    height: 42px; padding: 0 18px; border: none; border-radius: 0 8px 8px 0;
+    background: var(--brand-primary); color: #fff; font-weight: 800; cursor: pointer; font-size: 15px;
+}
+.public-login { margin-left: auto; color: #e5e7eb; font-weight: 700; font-size: 13px; text-decoration: none; white-space: nowrap; cursor: pointer; }
+.public-login:hover { color: #fff; }
+
+/* Menu horizontal */
+.public-nav { background: #0b0b0f; border-bottom: 3px solid var(--brand-primary); }
+.public-nav-inner {
+    max-width: 1200px; margin: 0 auto; display: flex; gap: 4px; padding: 0 16px;
+    overflow-x: auto; scrollbar-width: none;
+}
+.public-nav-inner::-webkit-scrollbar { display: none; }
+.public-nav-item {
+    background: none; border: none; color: #cbd5e1; font-family: var(--font);
+    font-size: 13px; font-weight: 700; padding: 12px 12px; cursor: pointer; white-space: nowrap;
+    border-bottom: 3px solid transparent; margin-bottom: -3px;
+}
+.public-nav-item:hover { color: #fff; }
+.public-nav-item.active { color: var(--brand-secondary); border-bottom-color: var(--brand-secondary); }
+
+/* Conteúdo centralizado */
+.public-main { max-width: 1200px; margin: 0 auto; padding: 28px 20px 60px; }
+.public-section-title { text-align: center; font-size: 17px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: #374151; margin: 8px 0 20px; }
+
+/* Categorias principais */
+.public-categories { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin-bottom: 44px; }
+.category-card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 18px 10px;
+    text-align: center; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.category-card:hover { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(0,0,0,0.08); }
+.category-card .ic { font-size: 26px; }
+.category-card .nm { margin-top: 8px; font-size: 12.5px; font-weight: 700; color: #374151; }
+
+/* Seção por marketplace */
+.marketplace-section { margin-bottom: 40px; }
+.marketplace-section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.marketplace-section-header h2 { font-size: 16px; font-weight: 800; color: #111827; }
+.marketplace-section-header .ver-todas { font-size: 13px; font-weight: 700; color: #374151; text-decoration: none; cursor: pointer; }
+.marketplace-section-header .ver-todas:hover { color: var(--brand-primary); }
+
+.marketplace-row { display: grid; grid-template-columns: 260px 1fr; gap: 24px; align-items: stretch; }
+
+/* Card institucional da loja (bloco lateral editorial) */
+.marketplace-highlight-card {
+    border-radius: 14px; padding: 22px; display: flex; flex-direction: column;
+    background: #111827; color: #fff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+}
+.marketplace-highlight-card h3 { font-size: 20px; font-weight: 800; line-height: 1.2; }
+.marketplace-highlight-card p { font-size: 13px; opacity: 0.9; line-height: 1.5; margin-top: 10px; }
+.marketplace-highlight-card .mh-btn {
+    margin-top: auto; text-align: center; font-weight: 800; font-size: 13px;
+    padding: 11px 14px; border-radius: 8px; cursor: pointer; text-decoration: none; border: none;
+    background: #fff; color: #111827; transition: transform 0.15s ease;
+}
+.marketplace-highlight-card .mh-btn:hover { transform: scale(1.02); }
+.mh-ml { background: #ffe600; color: #2d3277; }
+.mh-ml .mh-btn { background: #2d3277; color: #fff; }
+.mh-shopee { background: #ee4d2d; }
+.mh-shopee .mh-btn { background: #fff; color: #ee4d2d; }
+.mh-amazon { background: #232f3e; }
+.mh-amazon .mh-btn { background: #febd69; color: #111827; }
+.mh-cupom { background: #065f46; }
+.mh-cupom .mh-btn { background: #fff; color: #065f46; }
+.mh-generic .mh-btn { background: var(--brand-primary); color: #fff; }
+
+/* "Ver todas"/filtro com muitos produtos: card lateral NÃO estica até o fim
+   (a home com 4 produtos por seção segue com o card alinhado/proporcional). */
+.marketplace-section.is-expanded .marketplace-highlight-card { align-self: flex-start; }
+
+.marketplace-products-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+
+/* Card público de produto (sem herdar estilos admin) */
+.public-product-card {
+    display: flex; flex-direction: column; background: #fff; border: 1px solid #e5e7eb;
+    border-radius: 14px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.public-product-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.10); }
+.public-product-image-wrap {
+    position: relative; height: 170px; display: flex; align-items: center; justify-content: center;
+    padding: 14px; background: #fff; border-bottom: 1px solid #f3f4f6;
+}
+.public-product-image-wrap img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.public-product-noimg {
+    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: #9ca3af;
+}
+.public-product-badge {
+    position: absolute; top: 10px; left: 10px; background: var(--brand-primary); color: #fff;
+    font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 999px; text-transform: uppercase;
+}
+.public-product-body { padding: 12px 14px; flex: 1 1 auto; display: flex; flex-direction: column; }
+.public-product-body h3 {
+    font-size: 13px; font-weight: 600; color: #1f2937; line-height: 1.35; margin-bottom: 8px;
+    display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 36px;
+}
+.public-product-price { font-size: 20px; font-weight: 800; color: #111827; }
+.public-product-old-price { font-size: 12px; color: #9ca3af; text-decoration: line-through; margin-top: 2px; }
+.public-product-coupon { margin-top: 8px; font-size: 11px; font-weight: 700; color: #059669; background: #ecfdf5; border: 1px dashed #10b981; border-radius: 6px; padding: 4px 8px; align-self: flex-start; }
+.public-product-cta {
+    margin: 12px 14px 14px; text-align: center; text-decoration: none; cursor: pointer;
+    background: #111827; color: #fff; font-weight: 800; font-size: 13px; padding: 11px; border-radius: 8px;
+    transition: background 0.15s ease;
+}
+.public-product-cta:hover { background: var(--brand-primary); }
+
+.public-empty { text-align: center; padding: 40px; color: #6b7280; background: #fff; border: 1px dashed #d1d5db; border-radius: 14px; }
+
+/* Responsivo — tablet (inclui 1024px): loja empilhada + 2 colunas */
+@media (max-width: 1100px) {
+    .public-categories { grid-template-columns: repeat(4, 1fr); }
+    .marketplace-row { grid-template-columns: 1fr; }
+    .marketplace-products-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+    .public-header-inner { flex-wrap: wrap; height: auto; padding: 12px 16px; gap: 12px; }
+    .public-search { order: 3; max-width: none; width: 100%; flex-basis: 100%; }
+    .public-login { order: 2; }
+    .public-categories { grid-template-columns: repeat(2, 1fr); }
+    .marketplace-products-grid { grid-template-columns: 1fr; }
+    .public-main { padding: 18px 14px 48px; }
+}
+

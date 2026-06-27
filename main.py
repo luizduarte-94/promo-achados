@@ -15,10 +15,11 @@ O dashboard abre em: http://localhost:8000
 import base64
 import contextlib
 import os
+import re
 import secrets
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, Response, RedirectResponse
+from fastapi.responses import Response, RedirectResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend import database as db
@@ -51,7 +52,7 @@ async def lifespan(app: FastAPI):
         print("  [!!] Painel SEM senha (PANEL_PASSWORD vazio). Defina no .env p/ proteger.")
 
     print("  [i] Agendador roda à parte: python -m backend.scheduler_worker")
-    print(f"\n  Dashboard: http://localhost:8000")
+    print("\n  Dashboard: http://localhost:8000")
     print("=" * 55 + "\n")
 
     yield
@@ -76,19 +77,38 @@ app.add_middleware(
 )
 
 
+# Superfície PÚBLICA (somente leitura) — liberada mesmo com PANEL_PASSWORD ativo.
+# Tudo o que NÃO está aqui (admin + criação/edição/exclusão/busca/postagem) exige auth.
+_PUBLIC_PREFIXOS = ("/r/", "/css/", "/js/")
+_PUBLIC_GET_EXATO = {
+    "/",
+    "/api/ofertas",
+    "/api/ml/callback",
+}   # index (SPA), lista da vitrine e retorno OAuth
+
+
+def _rota_publica(request: Request) -> bool:
+    """True p/ rotas públicas de leitura (vitrine/redirect/estáticos/OAuth callback)."""
+    if request.method == "OPTIONS":          # preflight CORS
+        return True
+    path = request.url.path
+    if path.startswith(_PUBLIC_PREFIXOS):
+        return True
+    if request.method in ("GET", "HEAD") and path in _PUBLIC_GET_EXATO:
+        return True
+    return False
+
+
 @app.middleware("http")
-async def autenticacao_basica(request: Request, call_next):
-    """HTTP Basic Auth no painel inteiro.
+async def seguranca_e_cache(request: Request, call_next):
+    """Basic Auth no painel/mutações + cabeçalhos de cache previsíveis.
 
-    Ativa só quando PANEL_PASSWORD está definido no .env. Compara em tempo
-    constante (secrets.compare_digest) para evitar timing attack.
-    AVISO: Basic Auth só é seguro sobre HTTPS — em produção, ponha atrás de TLS.
+    Auth ativa só quando PANEL_PASSWORD está definido. A VITRINE e os endpoints
+    públicos de LEITURA (ver _rota_publica) ficam liberados; criação, edição,
+    exclusão, busca, postagem e telas/admin exigem credencial. Comparação em
+    tempo constante (secrets.compare_digest). AVISO: Basic Auth só é seguro sob HTTPS.
     """
-    # O redirecionador /r/ é PÚBLICO (clique do usuário final) — fora do Basic Auth.
-    if request.url.path.startswith("/r/"):
-        return await call_next(request)
-
-    if config.PANEL_PASSWORD and request.method != "OPTIONS":
+    if config.PANEL_PASSWORD and not _rota_publica(request):
         auth = request.headers.get("Authorization", "")
         autorizado = False
         if auth.startswith("Basic "):
@@ -105,7 +125,18 @@ async def autenticacao_basica(request: Request, call_next):
                 status_code=401,
                 headers={"WWW-Authenticate": 'Basic realm="Promo Achados"'},
             )
-    return await call_next(request)
+
+    resp = await call_next(request)
+
+    # Cache previsível: só URLs efetivamente versionadas podem ser imutáveis.
+    # Assets sem ?v= e o HTML revalidam sempre.
+    path = request.url.path
+    if path.startswith(("/css/", "/js/")):
+        if request.query_params.get("v"):
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 # API Routes
 app.include_router(api_router)
@@ -146,10 +177,25 @@ def analytics_summary(limite: int = 10, dias: int | None = None):
     return gerar_resumo(limite=limite, dias=dias)
 
 
+def _asset_version() -> str:
+    """Versão dos assets = maior mtime de style.css/app.js (cache-busting automático)."""
+    mt = 0
+    for rel in ("css/style.css", "js/app.js"):
+        try:
+            mt = max(mt, int((config.FRONTEND_DIR / rel).stat().st_mtime))
+        except OSError:
+            pass
+    return str(mt)
+
+
 @app.get("/")
 async def serve_index():
-    """Serve o dashboard."""
-    return FileResponse(str(config.FRONTEND_DIR / "index.html"))
+    """Serve o SPA. Injeta ?v=<mtime> nos assets (cache longo) e revalida o HTML."""
+    html = (config.FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    ver = _asset_version()
+    # Reescreve /css/style.css e /js/app.js (com ou sem ?v=) p/ a versão atual.
+    html = re.sub(r'(/css/style\.css|/js/app\.js)(\?v=[^"\']*)?', rf'\1?v={ver}', html)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
 if __name__ == "__main__":

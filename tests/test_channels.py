@@ -31,6 +31,19 @@ def test_telegram_montar_post_escapa_html(monkeypatch):
     assert "50% OFF" in texto
 
 
+def test_telegram_inclui_parcelamento_confirmado(monkeypatch):
+    monkeypatch.setattr(config, "USAR_IA_COPYWRITER", False)
+    oferta = {**OFERTA, "dados_extra": {"parcelamento_destaque": "Pague em até 24x sem juros"}}
+    texto = TelegramChannel()._montar_post(oferta)
+    assert "Pague em até 24x sem juros" in texto
+
+
+def test_telegram_omite_parcelamento_ausente(monkeypatch):
+    monkeypatch.setattr(config, "USAR_IA_COPYWRITER", False)
+    texto = TelegramChannel()._montar_post(OFERTA)
+    assert "24x" not in texto
+
+
 def test_telegram_reply_markup_link():
     rm = TelegramChannel()._get_reply_markup("https://meli.la/abc")
     assert "meli.la/abc" in rm and "COMPRAR" in rm

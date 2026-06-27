@@ -75,6 +75,15 @@ def test_resolver_destino_vazio_sem_link():
     assert resolver_destino({"titulo": "x"}, "telegram") == ""
 
 
+def test_resolver_destino_ml_preserva_meli_la_sem_query_extra():
+    oferta = {
+        "loja": "Mercado Livre",
+        "link_afiliado": "https://meli.la/abc",
+        "link_original": "https://www.mercadolivre.com.br/p/MLB-1",
+    }
+    assert resolver_destino(oferta, "telegram") == "https://meli.la/abc"
+
+
 # --- registrar_clique (persistência) -----------------------------------------
 
 def test_registrar_clique_persiste():

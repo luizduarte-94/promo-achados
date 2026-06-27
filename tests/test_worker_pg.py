@@ -1,34 +1,44 @@
 # -*- coding: utf-8 -*-
-"""Teste de integração: um job do agendador gravando no Postgres REAL (TASK-06).
+"""Teste de integração: um job do agendador gravando no Postgres (TASK-06).
 
-Pula automaticamente se não houver Postgres disponível (mantém a suíte verde
-offline). O resto dos testes continua em SQLite via conftest.
+SEGURANÇA: roda SOMENTE contra um banco DESCARTÁVEL, indicado explicitamente em
+`PROMO_TEST_PG_URL` (ex.: postgres de CI/teste). Sem essa variável o teste é
+PULADO — assim `pytest` nunca escreve no banco real configurado em DATABASE_URL.
 """
+
+import os
 
 import pytest
 
 from backend.config import config
 from backend.models import criar_engine
 
+_PG_TEST_URL = os.getenv("PROMO_TEST_PG_URL", "").strip()
+
 
 def _pg_disponivel() -> bool:
+    if not _PG_TEST_URL:
+        return False
     try:
-        with criar_engine(config.DATABASE_URL).connect():
+        with criar_engine(_PG_TEST_URL).connect():
             return True
     except Exception:
         return False
 
 
-pytestmark = pytest.mark.skipif(not _pg_disponivel(), reason="Postgres indisponível")
+pytestmark = pytest.mark.skipif(
+    not _pg_disponivel(),
+    reason="Defina PROMO_TEST_PG_URL apontando p/ um Postgres DESCARTÁVEL para rodar (evita tocar no banco real).",
+)
 
 
 @pytest.fixture
 def db_postgres():
-    """Reaponta a camada de dados para o Postgres real e restaura no fim."""
+    """Reaponta a camada de dados para o Postgres DESCARTÁVEL e restaura no fim."""
     from backend import database as db
 
     anterior = str(db.get_engine().url)   # SQLite de teste configurado no conftest
-    db.reconfigurar(config.DATABASE_URL)
+    db.reconfigurar(_PG_TEST_URL)
     db.init_db()
     yield db
     db.reconfigurar(anterior)             # restaura exatamente o que estava antes

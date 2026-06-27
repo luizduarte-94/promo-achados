@@ -121,6 +121,12 @@ class ShopeeScraper(BaseScraper):
         Usa `shopeeOfferV2` (ofertas de loja/cupom), que carrega janela de
         validade (periodStart/EndTime). Prioriza o que está EXPIRANDO e o de
         alta comissão — o combustível das publicações de urgência.
+
+        NOTA (manutenção): atualmente SEM USO — nenhum job/scheduler chama este
+        método (confirmado por varredura). Recomendação: ligar no scheduler de
+        ingestão (junto de buscar/buscar_todas_palavras) para realmente capturar
+        flash deals e cupons, OU remover se a estratégia mudar. Mantido por ser
+        capacidade pronta e testada.
         """
         if not config.shopee_ok():
             print("[SHOPEE] Credenciais não configuradas — sem ofertas relâmpago.")

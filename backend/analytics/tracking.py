@@ -22,7 +22,7 @@ import hashlib
 from backend import database as db
 from backend.config import config
 from backend.models import ClickEvent, criar_session_factory
-from backend.monetization import gerar_link_afiliado
+from backend.monetization import gerar_link_afiliado, eh_link_afiliado_ml
 
 
 def montar_link_redirect(oferta_id: int, canal: str) -> str:
@@ -40,9 +40,14 @@ def resolver_destino(oferta: dict, canal: str) -> str:
     Reusa o motor de monetização (TASK-10) com o canal do clique, para que o
     relatório de afiliado da Shopee também receba o sub_id/UTMs corretos.
     """
-    base = oferta.get("link_afiliado") or oferta.get("link_original") or ""
+    base = oferta.get("link_afiliado") or ""
+    if not base and (oferta.get("loja") or "").strip().lower() != "mercado livre":
+        base = oferta.get("link_original") or ""
     if not base:
         return ""
+    # O redirect interno já registra o canal; não altere o shortlink meli.la.
+    if eh_link_afiliado_ml(base):
+        return base
     return gerar_link_afiliado(base, canal=canal, produto_id=oferta.get("produto_id"))
 
 

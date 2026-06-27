@@ -11,6 +11,8 @@ const App = {
     departamentos: [],
     ofertas: [],
     currentTab: 'dashboard',
+    vitrineLoja: null,     // null | 'Mercado Livre' | 'Shopee' | 'Amazon' | '__cupom__'
+    vitrineTermo: '',
 
     // =============================================
     // INIT
@@ -29,15 +31,27 @@ const App = {
             window.history.replaceState({}, document.title, window.location.pathname);
         }
 
-        await Promise.all([
-            this.carregarStats(),
-            this.carregarDepartamentos(),
-            this.carregarOfertas(),
-            this.carregarConfig(),
-            this.carregarHistorico(),
-            this.carregarAnalytics(),
-        ]);
-        setInterval(() => this.carregarStats(), 30000);
+        // Na VITRINE pública (#vitrine), carrega só a lista de ofertas (endpoint
+        // público de leitura). Evita chamar APIs de admin protegidas — que dispara-
+        // riam prompt de Basic Auth para visitantes públicos quando há senha.
+        const naVitrine = location.hash === '#vitrine' || location.hash === '#site';
+        if (naVitrine) {
+            await this.carregarOfertas();
+        } else {
+            await Promise.all([
+                this.carregarStats(),
+                this.carregarDepartamentos(),
+                this.carregarOfertas(),
+                this.carregarConfig(),
+                this.carregarHistorico(),
+                this.carregarAnalytics(),
+            ]);
+            setInterval(() => this.carregarStats(), 30000);
+        }
+
+        // Roteamento simples por hash: #vitrine abre a loja pública; vazio = admin.
+        window.addEventListener('hashchange', () => this._aplicarRota());
+        this._aplicarRota();
     },
 
     // =============================================
@@ -154,6 +168,7 @@ const App = {
             const resp = await fetch(`${API}/api/ofertas`);
             this.ofertas = await resp.json();
             this.renderizarOfertas();
+            if (document.body.classList.contains('vitrine-ativa')) this.renderVitrine();
         } catch (e) {
             console.error('Erro ao carregar ofertas:', e);
         }
@@ -199,6 +214,30 @@ const App = {
         this.renderizarOfertas();
     },
 
+    abrirModalDepartamento() {
+        document.getElementById('modalNovoDepartamento').style.display = '';
+    },
+    fecharModalDepartamento() {
+        document.getElementById('modalNovoDepartamento').style.display = 'none';
+    },
+    async salvarNovoDepartamento() {
+        const nome = document.getElementById('depNome').value.trim();
+        const emoji = document.getElementById('depEmoji').value.trim() || '📦';
+        const palavras = document.getElementById('depPalavras').value.trim();
+        if (!nome) { this.toast('Informe o nome do departamento', 'error'); return; }
+        try {
+            await fetch(`${API}/api/departamentos`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nome, emoji, palavras_chave: palavras }),
+            });
+            this.toast(`Departamento "${emoji} ${nome}" criado!`, 'success');
+            this.fecharModalDepartamento();
+            ['depNome', 'depEmoji', 'depPalavras'].forEach(id => document.getElementById(id).value = '');
+            await this.carregarDepartamentos();
+        } catch (e) { this.toast(`Erro: ${e.message}`, 'error'); }
+    },
+
     renderizarOfertas() {
         const grid = document.getElementById('offersGrid');
         let lista = [...this.ofertas];
@@ -213,25 +252,49 @@ const App = {
             lista = lista.filter(o => String(o.departamento_id) === String(this.filtroDep));
         }
 
+        // Atualiza titulo
+        const panelTitle = document.querySelector('#tabOfertas .panel-title');
+        if (panelTitle) {
+            panelTitle.textContent = `Suas Ofertas (${lista.length} de ${this.ofertas.length})`;
+        }
+
         if (lista.length === 0) {
-            grid.innerHTML = `
-                <div class="empty" style="grid-column:1/-1;">
-                    <div class="empty-icon">📦</div>
-                    <div class="empty-text">Nenhuma oferta encontrada</div>
-                    <div class="empty-hint">Use "Buscar Ofertas" para encontrar promoções</div>
-                </div>
-            `;
+            grid.innerHTML = `<div class="offers-grid">${this._emptyState()}</div>`;
+            this.atualizarBotaoLote();
             return;
         }
 
-        grid.innerHTML = lista.map(o => this._cardOferta(o)).join('');
+        // Admin = grade simples de cards (dashboard escuro). A vitrine pública
+        // (aparência de loja) é uma view separada — ver renderVitrine().
+        grid.innerHTML = `<div class="offers-grid">${lista.map(o => this._cardOferta(o)).join('')}</div>`;
+        this.atualizarBotaoLote();   // estado .selected/botão consistente após render
+    },
+
+    _emptyState() {
+        const msgs = {
+            postada: 'Nenhuma oferta postada ainda',
+            cupom: 'Nenhuma oferta com cupom encontrada',
+            shopee: 'Nenhuma oferta da Shopee — ative as credenciais no .env',
+            ml: 'Nenhuma oferta do Mercado Livre com os filtros atuais',
+            pendente: 'Todas as ofertas já foram postadas! 🎉',
+        };
+        const emptyMsg = msgs[this.filtroAtual] || 'Nenhuma oferta encontrada';
+        return `
+            <div class="empty-vitrine" style="grid-column:1/-1;">
+                <div class="empty-icon">🛍️</div>
+                <div class="empty-text">${emptyMsg}</div>
+                <div class="empty-hint">Ajuste os filtros ou faça uma nova vitrine.</div>
+                <button class="btn btn-brand btn-sm" style="margin-top:16px;"
+                        onclick="App.switchTab('buscar', document.querySelector('[data-tab=buscar]'))">🔍 Buscar Ofertas</button>
+            </div>
+        `;
     },
 
     _cardOferta(o) {
         const desc = o.desconto_pct > 0 ? `<span class="badge badge-discount">-${Math.round(o.desconto_pct)}%</span>` : '';
-        const frete = o.frete_gratis ? `<span class="badge badge-frete">FRETE GRÁTIS</span>` : '';
-        const storeClass = o.loja === 'Mercado Livre' ? 'ml' : 'shopee';
-        const storeIcon = o.loja === 'Mercado Livre' ? '🟡' : '🟠';
+        const storeClass = o.loja === 'Mercado Livre' ? 'ml' : (o.loja === 'Amazon' ? 'amazon' : 'shopee');
+        const storeIcon = o.loja === 'Mercado Livre' ? '🟡' : (o.loja === 'Amazon' ? '📦' : '🟠');
+        const freteChip = o.frete_gratis ? `<span class="offer-frete-chip">Frete grátis</span>` : '';
 
         const img = o.imagem_url || `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><rect fill='%231a1a30' width='200' height='200'/><text x='100' y='110' text-anchor='middle' fill='%235c5c7a' font-size='40'>📦</text></svg>`;
 
@@ -241,53 +304,55 @@ const App = {
 
         const statusCls = o.status || 'pendente';
         const statusTxt = statusCls === 'postada' ? 'POSTADA' : 'PENDENTE';
-        const hasLink = o.link_afiliado;
 
         let cupomInfo = '';
         if (o.dados_extra && o.dados_extra.cupom) {
             let cupomText = this._esc(o.dados_extra.cupom);
-            // Destaca R$ XX ou XX% com verde neon e negrito
-            cupomText = cupomText.replace(/(R\$\s*[\d\.,]+|\d+(?:\.\d+)?%)/gi, '<strong style="color: #34d399; font-size: 1.15em;">$1</strong>');
-            cupomInfo = `
-                <div style="margin-top: 8px; font-size: 12px; color: #c4b5fd; background: rgba(139, 92, 246, 0.15); padding: 6px 10px; border-radius: 6px; display: inline-block; border: 1px dashed #8b5cf6;">
-                    🎟️ ${cupomText}
-                </div>
-            `;
+            cupomText = cupomText.replace(/(R\$\s*[\d\.,]+|\d+(?:\.\d+)?%)/gi, '<strong style="color: #059669; font-size: 1.1em;">$1</strong>');
+            cupomInfo = `<div class="offer-cupom">🎟️ ${cupomText}</div>`;
         }
 
-        const linkBtn = hasLink
-            ? `<button class="btn btn-ghost btn-sm" onclick="window.open('${this._esc(o.link_afiliado)}','_blank')">🔗 Link</button>`
-            : `<button class="btn btn-ghost btn-sm" onclick="App.abrirModalLink(${o.id})">🔗 Add Link</button>`;
+        const monetizada = this.temLinkAfiliadoValido(o);
+        const disabled = monetizada ? '' : 'disabled';
+        const postTitle = monetizada ? 'Publicar oferta' : 'Adicione um link de afiliado válido antes de publicar';
+        const linkBtn = `<button class="btn btn-ghost btn-icon-action" onclick="App.abrirModalLink(${o.id})"
+            title="${monetizada ? 'Editar' : 'Adicionar'} link de afiliado">🔗</button>`;
 
         return `
-            <div class="offer-card" id="card-${o.id}">
+            <div class="offer-card" id="card-${o.id}" style="position:relative;">
+                <input type="checkbox" class="offer-checkbox" value="${o.id}" onchange="App.atualizarBotaoLote()"
+                    title="${postTitle}" ${disabled}>
+                <button class="offer-delete" onclick="App.deletarOferta(${o.id})" title="Remover oferta" aria-label="Remover">🗑️</button>
                 <a href="${this._esc(o.link_original)}" target="_blank" style="text-decoration: none; color: inherit;">
                     <div class="offer-img-wrap">
                         <img class="offer-img" src="${img}" alt="${this._esc(o.titulo)}" loading="lazy"
                              onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 200 200%22><rect fill=%22%231a1a30%22 width=%22200%22 height=%22200%22/><text x=%22100%22 y=%22110%22 text-anchor=%22middle%22 fill=%22%235c5c7a%22 font-size=%2240%22>📦</text></svg>'">
                         ${desc}
-                        ${frete}
                         <span class="badge badge-store ${storeClass}">${storeIcon} ${o.loja}</span>
                     </div>
                     <div class="offer-body">
-                        <div class="offer-title" style="color: #60a5fa; cursor: pointer;">${this._esc(o.titulo)}</div>
+                        <div class="offer-title">${this._esc(o.titulo)}</div>
                         <div class="offer-pricing">
                             <span class="offer-price-current">${precoFmt}</span>
                             ${origFmt}
                         </div>
+                        ${freteChip}
                         ${cupomInfo}
                         <div class="offer-meta">
                             <span class="offer-status ${statusCls}">${statusTxt}</span>
+                        </div>
+                        <div class="offer-meta-secondary">
                             ${o.departamento_nome ? `<span class="offer-dept">${o.departamento_emoji || '📦'} ${this._esc(o.departamento_nome)}</span>` : ''}
                             ${o.vendedor ? `<span class="offer-seller">🏪 ${this._esc(o.vendedor)}</span>` : ''}
                         </div>
                     </div>
                 </a>
                 <div class="offer-footer">
-                    <button class="btn btn-success btn-sm" onclick="App.postarOferta(${o.id})">📢 Postar</button>
-                    <button class="btn btn-ghost btn-sm" onclick="App.copiarWhatsApp(${o.id})" title="Copiar mensagem p/ WhatsApp">📋 WhatsApp</button>
+                    <button class="btn btn-primary-action" id="post-telegram-${o.id}" style="background:#0088cc; color:#fff;" onclick="App.postarOferta(${o.id}, 'telegram')" title="${postTitle}" ${disabled}>📢 TG</button>
+                    <button class="btn btn-icon-action" id="post-instagram-${o.id}" style="background: linear-gradient(45deg, #f09433, #dc2743, #bc1888); color:#fff;" onclick="App.postarOferta(${o.id}, 'instagram')" title="${postTitle}" ${disabled}>📸</button>
+                    <button class="btn btn-ghost btn-icon-action" onclick="App.copiarWhatsApp(${o.id})" title="${postTitle}" ${disabled}>📋</button>
+                    <button class="btn btn-ghost btn-icon-action" onclick="App.testarOferta(${o.id})" title="Enviar teste (canal de teste — nunca o oficial)">🧪</button>
                     ${linkBtn}
-                    <button class="btn btn-danger btn-sm btn-icon" onclick="App.deletarOferta(${o.id})" title="Remover">🗑️</button>
                 </div>
             </div>
         `;
@@ -313,6 +378,205 @@ const App = {
         } catch (e) {
             this.toast(`Erro ao copiar: ${e.message}`, 'error');
         }
+    },
+
+    // =============================================
+    // VITRINE PÚBLICA (loja separada do admin)
+    // =============================================
+
+    abrirVitrine() { location.hash = '#vitrine'; },
+    sairVitrine() { location.hash = ''; },
+
+    _aplicarRota() {
+        const naVitrine = location.hash === '#vitrine' || location.hash === '#site';
+        document.body.classList.toggle('vitrine-ativa', naVitrine);
+        // Show/hide à prova de cache de CSS: controla display por JS (não só pela
+        // classe). Evita a vitrine "vazar" crua dentro do admin se o style.css
+        // estiver desatualizado no navegador.
+        const ph = document.getElementById('publicHome');
+        if (ph) ph.style.display = naVitrine ? 'block' : 'none';
+        document.querySelectorAll('.sidebar, .sidebar-toggle, .main-content').forEach(el => {
+            el.style.display = naVitrine ? 'none' : '';
+        });
+        if (naVitrine) this.renderVitrine();
+    },
+
+    renderVitrine() {
+        this._renderPublicNav();
+        this._renderPublicCategorias();
+        this._renderPublicSecoes();
+    },
+
+    _renderPublicNav() {
+        const nav = document.getElementById('publicNav');
+        if (!nav) return;
+        const itens = [
+            { label: 'Marcas', loja: null },
+            { label: 'Início', loja: null },
+            { label: 'Amazon', loja: 'Amazon' },
+            { label: 'Mercado Livre', loja: 'Mercado Livre' },
+            { label: 'Shopee', loja: 'Shopee' },
+            { label: 'AliExpress', loja: 'AliExpress' },
+            { label: 'Temu', loja: 'Temu' },
+            { label: 'Ofertas do Dia', loja: null },
+            { label: 'Cupons', loja: '__cupom__' },
+            { label: 'Blog', loja: null },
+        ];
+        nav.innerHTML = itens.map(it => {
+            const ativo = (it.loja || null) === this.vitrineLoja
+                || (it.label === 'Início' && !this.vitrineLoja && !this.vitrineTermo);
+            return `<button class="public-nav-item ${ativo ? 'active' : ''}"
+                onclick="App.vitrineNav(${it.loja ? `'${it.loja}'` : 'null'})">${it.label}</button>`;
+        }).join('');
+    },
+
+    _renderPublicCategorias() {
+        const box = document.getElementById('publicCategories');
+        if (!box) return;
+        const cats = [
+            ['📱', 'Celulares'], ['💻', 'Notebooks'], ['🧺', 'Lava e Seca'], ['🍟', 'Air Fryers'],
+            ['🎧', 'Eletrônicos'], ['🧽', 'Casa e Limpeza'], ['👗', 'Moda'], ['🎮', 'Games'],
+        ];
+        box.innerHTML = cats.map(([ic, nm]) =>
+            `<div class="category-card" onclick="App.vitrineCategoria('${nm}')">
+                <div class="ic">${ic}</div><div class="nm">${nm}</div>
+            </div>`).join('');
+    },
+
+    _vitrineFiltrada() {
+        const termo = (this.vitrineTermo || '').toLowerCase();
+        return this.ofertas.filter(o => !termo || (o.titulo || '').toLowerCase().includes(termo));
+    },
+
+    _renderPublicSecoes() {
+        const box = document.getElementById('publicSections');
+        if (!box) return;
+        const base = this._vitrineFiltrada();
+
+        const sec = (key, titulo, desc, itens, cap) => itens.length
+            ? this._publicSecaoMarketplace(key, titulo, desc, itens.slice(0, cap), itens.length)
+            : '';
+
+        let html = '';
+        if (this.vitrineLoja === '__cupom__') {
+            const cupons = base.filter(o => o.dados_extra && o.dados_extra.cupom);
+            html = sec('cupom', 'Cupons em destaque', 'Os melhores cupons selecionados para você.', cupons, 12);
+        } else if (this.vitrineLoja) {
+            const itens = base.filter(o => o.loja === this.vitrineLoja);
+            const meta = this._metaLoja(this.vitrineLoja);
+            html = sec(meta.key, meta.titulo, meta.desc, itens, 12);
+        } else {
+            const ml = base.filter(o => o.loja === 'Mercado Livre');
+            const shopee = base.filter(o => o.loja === 'Shopee');
+            const amazon = base.filter(o => o.loja === 'Amazon');
+            const outros = base.filter(o => !['Mercado Livre', 'Shopee', 'Amazon'].includes(o.loja));
+            html += sec('ml', 'As Melhores Ofertas do Mercado Livre', 'Produtos de qualidade e segurança, selecionados para você.', ml, 4);
+            html += sec('shopee', 'As Melhores Ofertas da Shopee', 'Achadinhos e cupons imperdíveis da Shopee.', shopee, 4);
+            html += sec('amazon', 'As Melhores Ofertas da Amazon Brasil', 'Frete grátis Prime e a garantia da Amazon.', amazon, 4);
+            html += sec('generic', 'Mais Ofertas', 'Seleção de ofertas de outras lojas.', outros, 4);
+        }
+
+        box.innerHTML = html || `<div class="public-empty">Nenhuma oferta encontrada. Tente outra busca ou categoria.</div>`;
+    },
+
+    _metaLoja(loja) {
+        const m = {
+            'Mercado Livre': { key: 'ml', titulo: 'As Melhores Ofertas do Mercado Livre', desc: 'Produtos de qualidade e segurança, selecionados para você.' },
+            'Shopee': { key: 'shopee', titulo: 'As Melhores Ofertas da Shopee', desc: 'Achadinhos e cupons imperdíveis da Shopee.' },
+            'Amazon': { key: 'amazon', titulo: 'As Melhores Ofertas da Amazon Brasil', desc: 'Frete grátis Prime e a garantia da Amazon.' },
+        };
+        return m[loja] || { key: 'generic', titulo: loja, desc: 'Ofertas selecionadas.' };
+    },
+
+    _publicSecaoMarketplace(key, titulo, desc, itens) {
+        const verFiltro = ['ml', 'shopee', 'amazon', 'cupom'].includes(key);
+        const lojaParaFiltro = { ml: 'Mercado Livre', shopee: 'Shopee', amazon: 'Amazon', cupom: '__cupom__' }[key] || null;
+        const verTodas = verFiltro
+            ? `<a class="ver-todas" onclick="App.vitrineNav('${lojaParaFiltro}')">Ver todas ›</a>`
+            : '';
+        return `
+            <section class="marketplace-section${itens.length > 4 ? ' is-expanded' : ''}">
+                <div class="marketplace-section-header">
+                    <h2>${titulo}</h2>
+                    ${verTodas}
+                </div>
+                <div class="marketplace-row">
+                    <div class="marketplace-highlight-card mh-${key}">
+                        <h3>${titulo.replace('As Melhores Ofertas ', '')}</h3>
+                        <p>${desc}</p>
+                        ${verFiltro
+                            ? `<a class="mh-btn" onclick="App.vitrineNav('${lojaParaFiltro}')">VER TODAS OFERTAS</a>`
+                            : `<a class="mh-btn" onclick="App.vitrineNav(null)">VER OFERTAS</a>`}
+                    </div>
+                    <div class="marketplace-products-grid">
+                        ${itens.map(o => this._publicProductCard(o)).join('')}
+                    </div>
+                </div>
+            </section>
+        `;
+    },
+
+    _publicProductCard(o) {
+        // Nunca ofereça o link original como fallback: ele não garante comissão.
+        const hrefSeguro = this.temLinkAfiliadoValido(o) ? this.safeUrl(o.link_afiliado) : '';
+        const cta = hrefSeguro
+            ? `<a class="public-product-cta" href="${this.escapeAttr(hrefSeguro)}" target="_blank" rel="noopener">Ver oferta</a>`
+            : `<a class="public-product-cta" href="#" onclick="return false" aria-disabled="true">Link em preparação</a>`;
+
+        // Imagem: só usa a URL do scraper se for segura; senão placeholder (sem src="#").
+        const imgSeguro = this.safeUrl(o.imagem_url);
+        const imagem = imgSeguro
+            ? `<img src="${this.escapeAttr(imgSeguro)}" alt="${this.escapeAttr(o.titulo)}" loading="lazy"
+                     onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
+               <div class="public-product-noimg" style="display:none">Sem imagem</div>`
+            : `<div class="public-product-noimg">Sem imagem</div>`;
+
+        const badge = o.desconto_pct > 0 ? `-${Math.round(o.desconto_pct)}%` : 'Oferta';
+        const old = (o.preco_original && o.preco_original > o.preco)
+            ? `<div class="public-product-old-price">${this.fmtPreco(o.preco_original)}</div>` : '';
+        const cupom = (o.dados_extra && o.dados_extra.cupom)
+            ? `<div class="public-product-coupon">🎟️ ${this._esc(o.dados_extra.cupom)}</div>` : '';
+        return `
+            <article class="public-product-card">
+                <div class="public-product-image-wrap">
+                    ${imagem}
+                    <span class="public-product-badge">${badge}</span>
+                </div>
+                <div class="public-product-body">
+                    <h3>${this._esc(o.titulo)}</h3>
+                    <div class="public-product-price">${this.fmtPreco(o.preco)}</div>
+                    ${old}
+                    ${cupom}
+                </div>
+                ${cta}
+            </article>
+        `;
+    },
+
+    vitrineNav(loja) {
+        this.vitrineLoja = loja || null;
+        this.vitrineTermo = '';
+        const input = document.getElementById('vitrineSearch');
+        if (input) input.value = '';
+        this.renderVitrine();
+    },
+
+    vitrineCategoria(nome) {
+        this.vitrineTermo = nome;
+        this.vitrineLoja = null;
+        const input = document.getElementById('vitrineSearch');
+        if (input) input.value = nome;
+        this.renderVitrine();
+    },
+
+    vitrineBuscar(e) {
+        if (e) e.preventDefault();
+        const input = document.getElementById('vitrineSearch');
+        this.vitrineTermo = input ? input.value.trim() : '';
+        this.vitrineLoja = null;
+        this._renderPublicNav();
+        this._renderPublicSecoes();
+        return false;
     },
 
     // =============================================
@@ -390,16 +654,127 @@ const App = {
     // POST
     // =============================================
 
-    async postarOferta(id) {
-        const card = document.getElementById(`card-${id}`);
-        const btn = card?.querySelector('.btn-success');
+    // Prévia OBRIGATÓRIA: postar/lote abrem um modal de conferência com checkbox.
+    postarOferta(id, canal = 'telegram') {
+        this.abrirPreviaPost({ tipo: 'individual', id, canal });
+    },
+
+    abrirPreviaPost(pend) {
+        this._postPendente = pend;
+        const body = document.getElementById('previaBody');
+        const chk = document.getElementById('previaConfirmado');
+        if (chk) chk.checked = false;
+        if (pend.tipo === 'individual') {
+            const o = this.ofertas.find(x => x.id === pend.id);
+            body.innerHTML = o ? this._previaCard(o, pend.canal) : '<p>Oferta não encontrada.</p>';
+        } else {
+            const lista = pend.ids.map(id => this.ofertas.find(x => x.id === id)).filter(Boolean);
+            body.innerHTML = this._previaLote(lista);
+        }
+        document.getElementById('modalPreviaPost').style.display = '';
+    },
+
+    fecharPreviaPost() { document.getElementById('modalPreviaPost').style.display = 'none'; },
+
+    confirmarPostagem() {
+        const chk = document.getElementById('previaConfirmado');
+        if (!chk || !chk.checked) {
+            this.toast('Marque "Conferi estes dados na página do produto" para continuar.', 'error');
+            return;
+        }
+        const pend = this._postPendente;
+        this.fecharPreviaPost();
+        if (!pend) return;
+        if (pend.tipo === 'individual') this._executarPostarOferta(pend.id, pend.canal);
+        else this._executarPostarLote(pend.ids);
+    },
+
+    _linkAfiliadoValido(o) {
+        const link = (o.link_afiliado || '').trim();
+        if (!link) return false;
+        try {
+            const u = new URL(link);
+            if ((o.loja || '').toLowerCase() === 'mercado livre') {
+                return u.protocol === 'https:' && u.hostname.toLowerCase() === 'meli.la' && !!u.pathname.replace(/\//g, '');
+            }
+            return (u.protocol === 'http:' || u.protocol === 'https:') && !!u.hostname;
+        } catch { return false; }
+    },
+
+    _previaCard(o, canal) {
+        const canalNome = { telegram: 'Telegram', instagram: 'Instagram' }[canal] || canal;
+        const img = o.imagem_url
+            ? `<img src="${this.escapeAttr(o.imagem_url)}" alt="" style="max-width:120px;max-height:120px;object-fit:contain;border-radius:8px;background:#fff;">`
+            : '<div style="width:120px;height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg-card);border-radius:8px;color:var(--text-tertiary);font-size:12px;">Sem imagem</div>';
+        const orig = (o.preco_original && o.preco_original > o.preco)
+            ? `<span style="text-decoration:line-through;color:var(--text-tertiary);margin-left:8px;">${this.fmtPreco(o.preco_original)}</span>` : '';
+        const desc = o.desconto_pct > 0 ? `<span style="color:var(--danger);font-weight:700;margin-left:8px;">-${Math.round(o.desconto_pct)}%</span>` : '';
+        const dx = o.dados_extra || {};
+        const cupom = dx.cupom ? this._esc(dx.cupom) : '—';
+        const parcel = (dx.parcelamento || dx.forma_pagamento) ? this._esc(dx.parcelamento || dx.forma_pagamento) : '—';
+        const ok = this._linkAfiliadoValido(o);
+        const linkLinha = ok
+            ? `<div style="color:var(--success);font-size:12px;">✔ Link afiliado OK</div>`
+            : `<div style="color:var(--danger);font-size:12px;">✖ Link de afiliado inválido${(o.loja || '').toLowerCase() === 'mercado livre' ? ' — Mercado Livre exige https://meli.la/…' : ''}. O servidor vai bloquear a postagem.</div>`;
+        const linha = (rot, val) => `<div style="display:flex;gap:8px;font-size:13px;margin-bottom:4px;"><span style="color:var(--text-tertiary);min-width:96px;">${rot}</span><span>${val}</span></div>`;
+        return `
+            <div style="display:flex;gap:14px;align-items:flex-start;">
+                ${img}
+                <div style="flex:1;min-width:0;">
+                    <div style="font-weight:700;margin-bottom:8px;">${this._esc(o.titulo)}</div>
+                    ${linha('Preço', `<b>${this.fmtPreco(o.preco)}</b>${orig}${desc}`)}
+                    ${linha('Parcelamento', parcel)}
+                    ${linha('Cupom', cupom)}
+                    ${linha('Loja', this._esc(o.loja || '—'))}
+                    ${linha('Canal', canalNome)}
+                    ${linkLinha}
+                </div>
+            </div>
+            <p style="font-size:11px;color:var(--text-tertiary);margin-top:10px;">
+                O servidor revalida o preço (confirmação manual válida por 6h) e bloqueia se subiu/sumiu/expirou.
+            </p>`;
+    },
+
+    _previaLote(lista) {
+        if (!lista.length) return '<p>Nenhuma oferta válida selecionada.</p>';
+        const invalidos = lista.filter(o => !this._linkAfiliadoValido(o)).length;
+        const itens = lista.slice(0, 12).map(o =>
+            `<li style="font-size:12.5px;margin-bottom:3px;">${this._esc(o.titulo)} — <b>${this.fmtPreco(o.preco)}</b>${this._linkAfiliadoValido(o) ? '' : ' <span style="color:var(--danger);">(link inválido)</span>'}</li>`
+        ).join('');
+        return `
+            <p style="font-weight:700;margin-bottom:8px;">${lista.length} oferta(s) selecionada(s)</p>
+            <ul style="margin:0 0 8px 18px;">${itens}</ul>
+            ${lista.length > 12 ? `<p style="font-size:12px;color:var(--text-tertiary);">…e mais ${lista.length - 12}.</p>` : ''}
+            ${invalidos ? `<p style="color:var(--danger);font-size:12px;">${invalidos} com link inválido — serão bloqueadas pelo servidor.</p>` : ''}
+            <p style="font-size:11px;color:var(--text-tertiary);margin-top:8px;">
+                Cada uma é revalidada no servidor (preço/cupom/link) antes do envio.
+            </p>`;
+    },
+
+    async testarOferta(id) {
+        try {
+            const resp = await fetch(`${API}/api/ofertas/${id}/testar`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+            });
+            const data = await resp.json();
+            if (!resp.ok) { this.toast(data.detail || 'Falha no envio de teste', 'error'); return; }
+            const r = data.resultado || {};
+            this.toast(r.sucesso ? 'Teste enviado ao canal de teste! 🧪' : `Teste: ${r.resposta}`, r.sucesso ? 'success' : 'info');
+        } catch (e) {
+            this.toast(`Erro: ${e.message}`, 'error');
+        }
+    },
+
+    async _executarPostarOferta(id, canal = 'telegram') {
+        const labels = { telegram: '📢 TG', instagram: '📸 IG' };
+        const btn = document.getElementById(`post-${canal}-${id}`);
         if (btn) { btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true; }
 
         try {
             const resp = await fetch(`${API}/api/ofertas/${id}/postar`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ canais: ['telegram'] }),
+                body: JSON.stringify({ canais: [canal] }),
             });
             const data = await resp.json();
             if (!resp.ok) {
@@ -416,7 +791,73 @@ const App = {
         } catch (e) {
             this.toast(`Erro: ${e.message}`, 'error');
         } finally {
-            if (btn) { btn.innerHTML = '📢 Postar'; btn.disabled = false; }
+            if (btn) { btn.innerHTML = labels[canal] || '📢 Postar'; btn.disabled = false; }
+        }
+    },
+
+    // =============================================
+    // POSTAGEM EM LOTE
+    // =============================================
+
+    toggleSelecionarTudo() {
+        const boxes = [...document.querySelectorAll('.offer-checkbox')];
+        if (!boxes.length) return;
+        const marcados = boxes.filter(c => c.checked).length;
+        const marcarTodos = marcados <= boxes.length / 2;   // maioria desmarcada -> marca tudo
+        boxes.forEach(c => { c.checked = marcarTodos; });
+        this.atualizarBotaoLote();
+    },
+
+    atualizarBotaoLote() {
+        // Realça o card selecionado (não só o checkbox).
+        document.querySelectorAll('.offer-checkbox').forEach(c => {
+            c.closest('.offer-card')?.classList.toggle('selected', c.checked);
+        });
+        const n = document.querySelectorAll('.offer-checkbox:checked').length;
+        const btn = document.getElementById('btnPostarLote');
+        if (!btn) return;
+        if (n > 0) {
+            btn.style.display = 'inline-block';
+            btn.textContent = `📢 Postar Selecionadas (${n})`;
+        } else {
+            btn.style.display = 'none';
+            btn.textContent = '📢 Postar Selecionadas (0)';
+        }
+    },
+
+    postarLote() {
+        const ids = [...document.querySelectorAll('.offer-checkbox:checked')].map(c => parseInt(c.value, 10));
+        if (!ids.length) { this.toast('Selecione ao menos uma oferta', 'error'); return; }
+        this.abrirPreviaPost({ tipo: 'lote', ids });   // prévia obrigatória antes do lote
+    },
+
+    async _executarPostarLote(ids) {
+        if (!ids || !ids.length) return;
+
+        // Operador escolhe o canal: OK = Telegram, Cancelar = Instagram.
+        const canal = confirm(`Postar ${ids.length} oferta(s) no TELEGRAM?\n\n(Cancelar = postar no Instagram)`)
+            ? 'telegram' : 'instagram';
+
+        const btn = document.getElementById('btnPostarLote');
+        if (btn) { btn.innerHTML = '<span class="spinner"></span> Postando...'; btn.disabled = true; }
+
+        try {
+            const resp = await fetch(`${API}/api/ofertas/postar-lote`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids, canais: [canal] }),
+            });
+            const data = await resp.json();
+            const res = data.resultados || [];
+            const ok = res.filter(r => r.sucesso).length;
+            this.toast(`Lote: ${ok}/${res.length} postada(s) no ${canal}`, ok > 0 ? 'success' : 'info');
+            await this.carregarOfertas();
+            await this.carregarStats();
+        } catch (e) {
+            this.toast(`Erro: ${e.message}`, 'error');
+        } finally {
+            if (btn) { btn.disabled = false; }
+            this.atualizarBotaoLote();   // grid recarregou: checkboxes resetados -> oculta botão
         }
     },
 
@@ -470,7 +911,11 @@ const App = {
 
     abrirModalLink(id) {
         document.getElementById('linkOfertaId').value = id;
-        document.getElementById('inputLinkAfiliado').value = '';
+        const oferta = this.ofertas.find(o => String(o.id) === String(id));
+        document.getElementById('inputLinkAfiliado').value = oferta?.link_afiliado || '';
+        const extras = oferta?.dados_extra || {};
+        document.getElementById('inputPrecoConfirmado').value = extras.preco_confirmado_manual || oferta?.preco || '';
+        document.getElementById('inputParcelamentoConfirmado').value = extras.parcelamento_manual || extras.parcelamento_destaque || extras.forma_pagamento || '';
         document.getElementById('modalLink').style.display = '';
     },
 
@@ -479,15 +924,24 @@ const App = {
     async salvarLinkAfiliado() {
         const id = document.getElementById('linkOfertaId').value;
         const link = document.getElementById('inputLinkAfiliado').value.trim();
+        const precoConfirmado = parseFloat(document.getElementById('inputPrecoConfirmado').value);
+        const parcelamentoConfirmado = document.getElementById('inputParcelamentoConfirmado').value.trim();
         if (!link) { this.toast('Cole o link!', 'error'); return; }
+        if (!precoConfirmado || precoConfirmado <= 0) { this.toast('Confirme o preço visto na página!', 'error'); return; }
 
         try {
-            await fetch(`${API}/api/ofertas/${id}`, {
+            const resp = await fetch(`${API}/api/ofertas/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ link_afiliado: link }),
+                body: JSON.stringify({
+                    link_afiliado: link,
+                    preco_confirmado: precoConfirmado,
+                    parcelamento_confirmado: parcelamentoConfirmado,
+                }),
             });
-            this.toast('Link salvo!', 'success');
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.detail || 'Link inválido');
+            this.toast('Link, preço e parcelamento confirmados!', 'success');
             this.fecharModalLink();
             await this.carregarOfertas();
         } catch (e) { this.toast(`Erro: ${e.message}`, 'error'); }
@@ -824,6 +1278,42 @@ const App = {
         const d = document.createElement('div');
         d.textContent = s;
         return d.innerHTML;
+    },
+
+    // Escapa valor p/ uso seguro DENTRO de um atributo HTML (inclui aspas e backtick).
+    escapeAttr(v) {
+        return String(v == null ? '' : v)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;')
+            .replace(/`/g, '&#096;');
+    },
+
+    // Valida URL p/ href/src. Devolve a URL ORIGINAL (trim) se for segura, senão ''.
+    // Não reescreve/reordena/recodifica nada — query string (utm_*, sub_id) intacta.
+    safeUrl(u) {
+        if (u == null) return '';
+        const s = String(u).trim();
+        if (!s) return '';
+        // Para a checagem, remove espaços/controle (pega "java\nscript:", "data :", etc).
+        const probe = s.replace(/[\u0000-\u0020]+/g, '').toLowerCase();
+        if (/^(javascript|data|vbscript|file|blob):/.test(probe)) return '';
+        const m = probe.match(/^([a-z][a-z0-9+.\-]*):/);   // tem esquema explícito?
+        if (m && m[1] !== 'http' && m[1] !== 'https') return '';
+        return s;   // http/https ou relativa (/, ./, ../, path, ?query, #anchor)
+    },
+
+    temLinkAfiliadoValido(o) {
+        const link = this.safeUrl(o?.link_afiliado);
+        if (!link) return false;
+        if ((o?.loja || '').toLowerCase() !== 'mercado livre') return true;
+        try {
+            return new URL(link).protocol === 'https:' && new URL(link).hostname.toLowerCase() === 'meli.la';
+        } catch (_) {
+            return false;
+        }
     },
 
     // =============================================

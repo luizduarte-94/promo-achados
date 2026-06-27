@@ -67,6 +67,7 @@
         <header class="topbar">
             <h2 class="topbar-title" id="pageTitle">Dashboard</h2>
             <div class="topbar-actions">
+                <button class="btn btn-ghost btn-sm" onclick="App.abrirVitrine()">🛍️ Vitrine Pública</button>
                 <button class="btn btn-ghost btn-sm" onclick="App.carregarStats(); App.carregarOfertas()">🔄 Atualizar</button>
                 <button class="btn btn-brand btn-sm" onclick="App.abrirModalNovaOferta()">+ Nova Oferta</button>
             </div>
@@ -152,28 +153,48 @@
 
             <!-- ===== TAB: OFERTAS ===== -->
             <section id="tabOfertas" style="display:none;">
-                <div class="panel">
+                <div class="panel ofertas-vitrine">
                     <div class="panel-header">
                         <div class="panel-title">Suas Ofertas</div>
-                        <button class="btn btn-brand btn-sm" onclick="App.abrirModalNovaOferta()">+ Nova</button>
+                        <div class="offer-actions" style="display:flex; gap:8px; align-items:center;">
+                            <div class="lote-bar">
+                                <button class="btn btn-ghost" id="btnSelecionarTudo" onclick="App.toggleSelecionarTudo()">☑️ Selecionar Tudo</button>
+                                <button class="btn btn-brand" id="btnPostarLote" onclick="App.postarLote()" style="display: none;">📢 Postar Selecionadas (0)</button>
+                            </div>
+                            <button class="btn btn-brand btn-sm" onclick="App.abrirModalNovaOferta()">+ Nova</button>
+                        </div>
                     </div>
                     <div class="panel-body">
-                        <div class="filter-bar" id="filterBar">
-                            <button class="chip active" data-filter="todas" onclick="App.filtrar('todas')">Todas</button>
-                            <button class="chip" data-filter="pendente" onclick="App.filtrar('pendente')">Pendentes</button>
-                            <button class="chip" data-filter="postada" onclick="App.filtrar('postada')">Postadas</button>
-                            <button class="chip" data-filter="cupom" onclick="App.filtrar('cupom')">Com Cupom 🎟️</button>
-                            <button class="chip" data-filter="ml" onclick="App.filtrar('ml')">Mercado Livre</button>
-                            <button class="chip" data-filter="shopee" onclick="App.filtrar('shopee')">Shopee</button>
+                        <div class="filter-groups-container">
+                            <div id="filterBar" style="display:flex; flex-direction:column; gap:10px;">
+                                <div class="filter-group">
+                                    <span class="filter-label">Status</span>
+                                    <button class="chip active" data-filter="todas" onclick="App.filtrar('todas')">Todas</button>
+                                    <button class="chip" data-filter="pendente" onclick="App.filtrar('pendente')">Pendentes</button>
+                                    <button class="chip" data-filter="postada" onclick="App.filtrar('postada')">Postadas</button>
+                                </div>
+                                <div class="filter-group">
+                                    <span class="filter-label">Loja</span>
+                                    <button class="chip" data-filter="cupom" onclick="App.filtrar('cupom')">Com Cupom 🎟️</button>
+                                    <button class="chip" data-filter="ml" onclick="App.filtrar('ml')">Mercado Livre</button>
+                                    <button class="chip" data-filter="shopee" onclick="App.filtrar('shopee')">Shopee</button>
+                                </div>
+                            </div>
+                            <div class="filter-group">
+                                <span class="filter-label">Categoria</span>
+                                <button class="btn btn-ghost btn-sm" onclick="App.abrirModalDepartamento()">➕ Novo Departamento</button>
+                                <div class="filter-bar" id="deptFilterBar" style="margin:0;">
+                                    <!-- Chips de departamento preenchidos via JS -->
+                                </div>
+                            </div>
                         </div>
-                        <div class="filter-bar" id="deptFilterBar" style="margin-top:8px;">
-                            <!-- Chips de departamento preenchidos via JS -->
-                        </div>
-                        <div class="offers-grid" id="offersGrid">
-                            <div class="empty" style="grid-column:1/-1;">
-                                <div class="empty-icon">📦</div>
-                                <div class="empty-text">Nenhuma oferta ainda</div>
-                                <div class="empty-hint">Use "Buscar Ofertas" no menu</div>
+                        <div id="offersGrid">
+                            <div class="offers-grid">
+                                <div class="empty" style="grid-column:1/-1;">
+                                    <div class="empty-icon">📦</div>
+                                    <div class="empty-text">Nenhuma oferta ainda</div>
+                                    <div class="empty-hint">Use "Buscar Ofertas" no menu</div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -354,6 +375,28 @@
         </div>
     </div>
 
+    <!-- ========== VITRINE PÚBLICA (separada do admin) ========== -->
+    <div id="publicHome" class="public-shell" style="display:none">
+        <header class="public-header">
+            <div class="public-header-inner">
+                <div class="public-logo">🔥 Promo Achados<span class="dot">!</span></div>
+                <form class="public-search" onsubmit="return App.vitrineBuscar(event)">
+                    <input id="vitrineSearch" type="text" placeholder="Pesquise seu produto aqui...">
+                    <button type="submit" aria-label="Buscar">🔍</button>
+                </form>
+                <a class="public-login" onclick="App.sairVitrine()">← Voltar ao Painel</a>
+            </div>
+        </header>
+        <nav class="public-nav">
+            <div class="public-nav-inner" id="publicNav"></div>
+        </nav>
+        <main class="public-main">
+            <div class="public-section-title">Principais Categorias</div>
+            <div class="public-categories" id="publicCategories"></div>
+            <div id="publicSections"></div>
+        </main>
+    </div>
+
     <!-- TOAST -->
     <div class="toast-area" id="toastArea"></div>
 
@@ -408,6 +451,19 @@
                 <label class="form-label">Link de Afiliado</label>
                 <input type="text" class="form-input" id="inputLinkAfiliado" placeholder="https://meli.la/...">
             </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div class="form-group">
+                    <label class="form-label">Preço confirmado (R$)</label>
+                    <input type="number" class="form-input" id="inputPrecoConfirmado" step="0.01" min="0.01" placeholder="99.98">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Parcelamento confirmado</label>
+                    <input type="text" class="form-input" id="inputParcelamentoConfirmado" placeholder="12x de R$ 9,85">
+                </div>
+            </div>
+            <p style="font-size:11px;color:var(--text-tertiary);margin-top:-6px;">
+                Confira estes valores na página do produto. A confirmação vale por 6 horas.
+            </p>
             <input type="hidden" id="linkOfertaId">
             <div class="modal-footer">
                 <button class="btn btn-ghost" onclick="App.fecharModalLink()">Cancelar</button>
@@ -444,6 +500,47 @@
             <div class="modal-footer">
                 <button class="btn btn-ghost" onclick="App.fecharModalRecorrente()">Cancelar</button>
                 <button class="btn btn-brand" onclick="App.salvarRecorrente()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: PRÉVIA OBRIGATÓRIA ANTES DE POSTAR -->
+    <div class="modal-backdrop" id="modalPreviaPost" style="display:none;" onclick="if(event.target===this) App.fecharPreviaPost()">
+        <div class="modal-box">
+            <div class="modal-title">Conferir antes de postar</div>
+            <div id="previaBody"><!-- preenchido via JS --></div>
+            <label style="display:flex; gap:8px; align-items:flex-start; margin-top:16px; font-size:13px; cursor:pointer;">
+                <input type="checkbox" id="previaConfirmado" style="margin-top:3px; width:16px; height:16px;">
+                <span>Conferi estes dados na página do produto</span>
+            </label>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="App.fecharPreviaPost()">Cancelar</button>
+                <button class="btn btn-success" id="btnConfirmarPost" onclick="App.confirmarPostagem()">Confirmar e postar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: NOVO DEPARTAMENTO -->
+    <div class="modal-backdrop" id="modalNovoDepartamento" style="display:none;" onclick="if(event.target===this) App.fecharModalDepartamento()">
+        <div class="modal-box">
+            <div class="modal-title">Novo Departamento</div>
+            <div style="display:grid; grid-template-columns:1fr 90px; gap:12px;">
+                <div class="form-group">
+                    <label class="form-label">Nome *</label>
+                    <input type="text" class="form-input" id="depNome" placeholder="Ex: Pet Shop">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Emoji</label>
+                    <input type="text" class="form-input" id="depEmoji" placeholder="📦" maxlength="4">
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Palavras-chave (separadas por vírgula)</label>
+                <input type="text" class="form-input" id="depPalavras" placeholder="ração, petisco, coleira">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="App.fecharModalDepartamento()">Cancelar</button>
+                <button class="btn btn-brand" onclick="App.salvarNovoDepartamento()">Salvar</button>
             </div>
         </div>
     </div>

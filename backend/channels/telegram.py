@@ -27,19 +27,39 @@ class TelegramChannel(BaseChannel):
         return config.telegram_ok()
 
     def enviar(self, oferta: dict) -> dict:
-        """Envia oferta formatada para o canal do Telegram."""
+        """Envia oferta formatada para o canal OFICIAL do Telegram."""
         if not self.esta_configurado():
             return {"sucesso": False, "resposta": "Token do Telegram nao configurado."}
+        return self._postar(oferta, self.chat_id)
 
+    def enviar_teste(self, oferta: dict) -> dict:
+        """Posta a oferta no canal de TESTE (TELEGRAM_TEST_CHAT_ID).
+
+        Segurança: NUNCA usa o TELEGRAM_CHAT_ID oficial. Se o canal de teste não
+        estiver configurado, retorna instrução clara SEM tentar enviar nada.
+        """
+        if not self.esta_configurado():
+            return {"sucesso": False, "resposta": "Token do Telegram nao configurado."}
+        if not config.TELEGRAM_TEST_CHAT_ID:
+            return {
+                "sucesso": False,
+                "resposta": (
+                    "Canal de teste não configurado. Defina TELEGRAM_TEST_CHAT_ID "
+                    "(ex.: id de um grupo/privado só seu) no ambiente. O envio de "
+                    "teste nunca usa o canal oficial."
+                ),
+            }
+        return self._postar(oferta, config.TELEGRAM_TEST_CHAT_ID)
+
+    def _postar(self, oferta: dict, chat_id: str) -> dict:
+        """Monta e envia o post para um chat_id específico (oficial ou de teste)."""
         texto = self._montar_post(oferta)
         imagem_url = oferta.get("imagem_url")
         link = self._link_rastreado(oferta)
-
         try:
             if imagem_url:
-                return self._enviar_com_imagem(texto, imagem_url, link)
-            else:
-                return self._enviar_texto(texto, link)
+                return self._enviar_com_imagem(texto, imagem_url, link, chat_id=chat_id)
+            return self._enviar_texto(texto, link, chat_id=chat_id)
         except Exception as e:
             return {"sucesso": False, "resposta": f"Erro inesperado: {e}"}
 
@@ -96,6 +116,11 @@ class TelegramChannel(BaseChannel):
             linhas.append(f"<b>Por: {preco_fmt}</b>")
         linhas.append("")
 
+        parcelamento = self.obter_parcelamento(oferta)
+        if parcelamento:
+            linhas.append(f"💳 <b>{self._esc(parcelamento)}</b>")
+            linhas.append("")
+
         # Frete
         if oferta.get("frete_gratis"):
             linhas.append("🚚 <b>Frete Grátis!</b>")
@@ -125,6 +150,12 @@ class TelegramChannel(BaseChannel):
     def _get_reply_markup(self, link: str):
         if not link:
             return None
+            
+        # Proteção: A API do Telegram proíbe links locais em botões.
+        # Removemos o botão em ambiente de dev para que o post não falhe.
+        if "localhost" in link or "127.0.0.1" in link:
+            return None
+            
         import json
         return json.dumps({
             "inline_keyboard": [[
@@ -132,8 +163,9 @@ class TelegramChannel(BaseChannel):
             ]]
         })
 
-    def _enviar_com_imagem(self, texto: str, imagem_url: str, link: str) -> dict:
+    def _enviar_com_imagem(self, texto: str, imagem_url: str, link: str, chat_id: str = None) -> dict:
         """Envia post com foto — tenta upload, fallback para URL."""
+        chat_id = chat_id or self.chat_id
         url = f"{self.api_base}/sendPhoto"
         reply_markup = self._get_reply_markup(link)
 
@@ -153,7 +185,7 @@ class TelegramChannel(BaseChannel):
 
                 arquivos = {"photo": (f"produto.{ext}", img_resp.content)}
                 dados = {
-                    "chat_id": self.chat_id,
+                    "chat_id": chat_id,
                     "caption": texto,
                     "parse_mode": "HTML",
                 }
@@ -167,7 +199,7 @@ class TelegramChannel(BaseChannel):
         except Exception:
             # Fallback: envia URL direta
             dados = {
-                "chat_id": self.chat_id,
+                "chat_id": chat_id,
                 "photo": imagem_url,
                 "caption": texto,
                 "parse_mode": "HTML",
@@ -178,12 +210,13 @@ class TelegramChannel(BaseChannel):
 
         return self._processar_resposta(resp)
 
-    def _enviar_texto(self, texto: str, link: str) -> dict:
+    def _enviar_texto(self, texto: str, link: str, chat_id: str = None) -> dict:
         """Envia post apenas texto."""
+        chat_id = chat_id or self.chat_id
         url = f"{self.api_base}/sendMessage"
         reply_markup = self._get_reply_markup(link)
         dados = {
-            "chat_id": self.chat_id,
+            "chat_id": chat_id,
             "text": texto,
             "parse_mode": "HTML",
         }

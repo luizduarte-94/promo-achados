@@ -12,6 +12,7 @@ import shutil
 import tempfile
 
 os.environ.setdefault("USE_SQLITE", "true")
+os.environ["PANEL_PASSWORD"] = ""
 
 import pytest  # noqa: E402
 

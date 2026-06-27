@@ -10,12 +10,16 @@ from backend.monetization.link_generator import (
     LinkGenerator,
     gerar_link_afiliado,
     aplicar_utms,
+    eh_link_afiliado_ml,
     montar_sub_id,
+    oferta_tem_link_afiliado_valido,
 )
 
 __all__ = [
     "LinkGenerator",
     "gerar_link_afiliado",
     "aplicar_utms",
+    "eh_link_afiliado_ml",
     "montar_sub_id",
+    "oferta_tem_link_afiliado_valido",
 ]

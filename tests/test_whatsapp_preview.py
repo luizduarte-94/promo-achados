@@ -44,6 +44,15 @@ def test_preview_inclui_cupom():
     assert "Utilize o cupom: R$10 OFF" in t
 
 
+def test_preview_inclui_parcelamento_confirmado():
+    o = dict(OFERTA)
+    o["dados_extra"] = {
+        **OFERTA["dados_extra"],
+        "parcelamento_destaque": "Pague em até 24x sem juros",
+    }
+    assert "💳 *Pague em até 24x sem juros*" in WhatsAppChannel().preview(o)
+
+
 def test_preview_sem_preco_original_nao_tem_de():
     o = dict(OFERTA)
     o.pop("preco_original")

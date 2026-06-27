@@ -10,7 +10,13 @@ from urllib.parse import parse_qs, urlparse
 
 from backend import database as db
 from backend.config import config
-from backend.monetization import aplicar_utms, gerar_link_afiliado, montar_sub_id
+from backend.monetization import (
+    aplicar_utms,
+    eh_link_afiliado_ml,
+    gerar_link_afiliado,
+    montar_sub_id,
+    oferta_tem_link_afiliado_valido,
+)
 
 
 def _query(url: str) -> dict:
@@ -83,8 +89,8 @@ def test_url_vazia_nao_quebra():
     assert aplicar_utms("", utm_source="x") == ""
 
 
-def test_ingestao_gera_link_afiliado_base(monkeypatch):
-    """coletar_e_salvar deve gravar link_afiliado base (canal padrão) na ORM."""
+def test_ingestao_ml_nao_finge_link_afiliado_com_utm(monkeypatch):
+    """UTM no link original do ML não é comissão; aguarda meli.la manual."""
     monkeypatch.setattr(config, "AFILIADO_CANAL_PADRAO", "site")
     ofertas = [{
         "titulo": "Mouse Gamer Monetiza",
@@ -95,12 +101,22 @@ def test_ingestao_gera_link_afiliado_base(monkeypatch):
     novas = db.coletar_e_salvar(ofertas)
     try:
         o = db.obter_oferta(novas[0]["id"])
-        assert o["link_afiliado"]                         # gerou algo
-        q = _query(o["link_afiliado"])
-        assert q["utm_source"] == "site"                  # canal padrão
-        assert q["sub_id"] == "site_mlb9090901"           # produto_id no sub_id
+        assert o["link_afiliado"] is None
     finally:
         db.deletar_oferta(novas[0]["id"])
+
+
+def test_link_ml_valido_exige_https_meli_la():
+    assert eh_link_afiliado_ml("https://meli.la/abc") is True
+    assert eh_link_afiliado_ml("https://meli.la/") is False
+    assert eh_link_afiliado_ml("http://meli.la/abc") is False
+    assert eh_link_afiliado_ml("https://mercadolivre.com.br/produto?utm_source=site") is False
+    assert oferta_tem_link_afiliado_valido({
+        "loja": "Mercado Livre", "link_afiliado": "https://meli.la/abc",
+    }) is True
+    assert oferta_tem_link_afiliado_valido({
+        "loja": "Mercado Livre", "link_afiliado": "https://x/MLB-1?utm_source=site",
+    }) is False
 
 
 def test_ingestao_preserva_link_afiliado_existente():

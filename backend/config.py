@@ -32,6 +32,9 @@ class Config:
     # --- Telegram ---
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "@promoachadosbrasiloficial")
+    # Canal de TESTE (opcional). Quando definido, o botão "Enviar teste" posta SÓ
+    # aqui — nunca no TELEGRAM_CHAT_ID oficial. Definir por ambiente (não no .env oficial).
+    TELEGRAM_TEST_CHAT_ID: str = os.getenv("TELEGRAM_TEST_CHAT_ID", "")
 
     # --- Mercado Livre ---
     ML_CLIENT_ID: str = os.getenv("ML_CLIENT_ID", "")
@@ -136,6 +139,11 @@ class Config:
     @classmethod
     def telegram_ok(cls) -> bool:
         return bool(cls.TELEGRAM_BOT_TOKEN and "COLE" not in cls.TELEGRAM_BOT_TOKEN)
+
+    @classmethod
+    def telegram_test_ok(cls) -> bool:
+        """True se há token + canal de TESTE configurado (separado do oficial)."""
+        return bool(cls.telegram_ok() and cls.TELEGRAM_TEST_CHAT_ID)
 
     @classmethod
     def shopee_ok(cls) -> bool:

@@ -68,6 +68,29 @@ def _eh_shopee(url: str) -> bool:
     return "shopee." in (urlparse(url).netloc or url).lower()
 
 
+def eh_link_afiliado_ml(url: str | None) -> bool:
+    """True somente para o shortlink comissionado gerado pelo Mercado Livre."""
+    if not url:
+        return False
+    partes = urlparse(str(url).strip())
+    return (
+        partes.scheme == "https"
+        and (partes.hostname or "").lower() == "meli.la"
+        and bool(partes.path.strip("/"))
+    )
+
+
+def oferta_tem_link_afiliado_valido(oferta: dict) -> bool:
+    """Valida monetização; Mercado Livre exige meli.la, outras lojas exigem URL."""
+    link = (oferta.get("link_afiliado") or "").strip()
+    if not link:
+        return False
+    if (oferta.get("loja") or "").strip().lower() == "mercado livre":
+        return eh_link_afiliado_ml(link)
+    partes = urlparse(link)
+    return partes.scheme in ("http", "https") and bool(partes.hostname)
+
+
 class LinkGenerator:
     """Converte URLs cruas em links de afiliado rastreáveis (ponto único)."""
 
